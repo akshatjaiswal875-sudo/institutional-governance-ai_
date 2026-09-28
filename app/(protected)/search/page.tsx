@@ -1,2 +1,5 @@
-import { SearchView } from "@/components/phase1-live";
-export default function SearchPage() { return <SearchView />; }
+import { SearchView } from "@/components/search-view";
+
+export default function SearchPage() {
+  return <SearchView />;
+}

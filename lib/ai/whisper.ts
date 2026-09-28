@@ -17,12 +17,7 @@ async function transcribeViaWorker(file: File): Promise<string> {
     const form = new FormData();
     form.append("file", file, file.name || "recording");
     form.append("model", process.env.WHISPER_MODEL || "small");
-    const response = await fetch(workerUrl, {
-      method: "POST",
-      headers: process.env.WHISPER_WORKER_TOKEN ? { Authorization: `Bearer ${process.env.WHISPER_WORKER_TOKEN}` } : undefined,
-      body: form,
-      signal: controller.signal,
-    });
+    const response = await fetch(workerUrl, { method: "POST", headers: process.env.WHISPER_WORKER_TOKEN ? { Authorization: `Bearer ${process.env.WHISPER_WORKER_TOKEN}` } : undefined, body: form, signal: controller.signal });
     const contentType = response.headers.get("content-type") || "";
     if (!response.ok) throw new Error(`Local Whisper worker failed (${response.status}).`);
     if (!contentType.includes("application/json")) throw new Error("Local Whisper worker returned an invalid response.");
@@ -32,15 +27,20 @@ async function transcribeViaWorker(file: File): Promise<string> {
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") throw new Error("Local Whisper worker timed out.");
     throw error;
-  } finally {
-    clearTimeout(timeout);
-  }
+  } finally { clearTimeout(timeout); }
 }
 
 async function transcribeViaHuggingFace(file: File): Promise<string> {
   const apiKey = process.env.HUGGINGFACE_API_KEY?.trim();
   if (!apiKey) throw new Error("HUGGINGFACE_API_KEY is missing.");
-  const model = process.env.HUGGINGFACE_WHISPER_MODEL?.trim() || "openai/whisper-small";
+
+  // HF Inference currently recommends whisper-large-v3 for automatic speech recognition.
+  // The previous whisper-small setting is not served by the hf-inference provider.
+  const configuredModel = process.env.HUGGINGFACE_WHISPER_MODEL?.trim();
+  const model = !configuredModel || configuredModel === "openai/whisper-small"
+    ? "openai/whisper-large-v3"
+    : configuredModel;
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10 * 60 * 1000);
   try {

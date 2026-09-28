@@ -1,12 +1,6 @@
 -- Production hardening for meeting intelligence.
 -- Safe to apply after 006_ai_meeting_intelligence.sql.
-
--- Retries must converge on one transcript/analysis for a recording.
-CREATE UNIQUE INDEX IF NOT EXISTS meeting_transcripts_recording_unique_idx
-ON public.meeting_transcripts (recording_id);
-
-CREATE UNIQUE INDEX IF NOT EXISTS meeting_ai_analysis_transcript_unique_idx
-ON public.meeting_ai_analysis (transcript_id);
+-- No production rows are deleted or deduplicated by this migration.
 
 -- Tighten storage access: the object path must identify an actual meeting the
 -- authenticated user is allowed to access. The previous policy accepted any
@@ -19,21 +13,10 @@ TO authenticated
 USING (
   bucket_id = 'meeting-media'
   AND EXISTS (
-    SELECT 1
-    FROM public.meetings m
+    SELECT 1 FROM public.meetings m
     WHERE m.id::text = (storage.foldername(name))[2]
-      AND (
-        public.is_staff()
-        OR m.status = 'Published'
-        OR m.created_by = auth.uid()
-        OR m.assigned_approver_id = auth.uid()
-        OR EXISTS (
-          SELECT 1
-          FROM public.participants p
-          WHERE p.meeting_id = m.id
-            AND p.user_id = auth.uid()
-        )
-      )
+      AND (public.is_staff() OR m.status = 'Published' OR m.created_by = auth.uid() OR m.assigned_approver_id = auth.uid()
+        OR EXISTS (SELECT 1 FROM public.participants p WHERE p.meeting_id = m.id AND p.user_id = auth.uid()))
   )
 );
 
@@ -46,12 +29,7 @@ WITH CHECK (
   bucket_id = 'meeting-media'
   AND public.current_role() IN ('Super Admin', 'Meeting Secretary')
   AND (storage.foldername(name))[1] = 'meetings'
-  AND EXISTS (
-    SELECT 1
-    FROM public.meetings m
-    WHERE m.id::text = (storage.foldername(name))[2]
-      AND (m.created_by = auth.uid() OR public.current_role() = 'Super Admin')
-  )
+  AND EXISTS (SELECT 1 FROM public.meetings m WHERE m.id::text = (storage.foldername(name))[2] AND (m.created_by = auth.uid() OR public.current_role() = 'Super Admin'))
 );
 
 DROP POLICY IF EXISTS meeting_media_authenticated_update ON storage.objects;
@@ -62,17 +40,9 @@ TO authenticated
 USING (
   bucket_id = 'meeting-media'
   AND public.current_role() IN ('Super Admin', 'Meeting Secretary')
-  AND EXISTS (
-    SELECT 1
-    FROM public.meetings m
-    WHERE m.id::text = (storage.foldername(name))[2]
-      AND (m.created_by = auth.uid() OR public.current_role() = 'Super Admin')
-  )
+  AND EXISTS (SELECT 1 FROM public.meetings m WHERE m.id::text = (storage.foldername(name))[2] AND (m.created_by = auth.uid() OR public.current_role() = 'Super Admin'))
 )
-WITH CHECK (
-  bucket_id = 'meeting-media'
-  AND (storage.foldername(name))[1] = 'meetings'
-);
+WITH CHECK (bucket_id = 'meeting-media' AND (storage.foldername(name))[1] = 'meetings');
 
 DROP POLICY IF EXISTS meeting_media_authenticated_delete ON storage.objects;
 CREATE POLICY meeting_media_authenticated_delete
@@ -82,10 +52,5 @@ TO authenticated
 USING (
   bucket_id = 'meeting-media'
   AND public.current_role() IN ('Super Admin', 'Meeting Secretary')
-  AND EXISTS (
-    SELECT 1
-    FROM public.meetings m
-    WHERE m.id::text = (storage.foldername(name))[2]
-      AND (m.created_by = auth.uid() OR public.current_role() = 'Super Admin')
-  )
+  AND EXISTS (SELECT 1 FROM public.meetings m WHERE m.id::text = (storage.foldername(name))[2] AND (m.created_by = auth.uid() OR public.current_role() = 'Super Admin'))
 );

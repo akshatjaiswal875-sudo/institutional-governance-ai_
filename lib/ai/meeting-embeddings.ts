@@ -1,4 +1,4 @@
-import { embedText } from "@/lib/ai/gemini";
+import { embed } from "@/lib/ai/pipeline";
 import { chunkText } from "@/lib/chunk";
 
 export async function replaceMeetingEmbeddings(
@@ -12,7 +12,7 @@ export async function replaceMeetingEmbeddings(
 
   const vectors: number[][] = [];
   for (const chunk of chunks) {
-    vectors.push(await embedText(chunk));
+    vectors.push(await embed(chunk));
   }
 
   const { error: deleteError } = await supabase.from("embeddings").delete().eq("parent_type", "meeting").eq("parent_id", meetingId);
@@ -23,7 +23,7 @@ export async function replaceMeetingEmbeddings(
     parent_id: meetingId,
     chunk_content: chunk,
     embedding: vectors[index],
-    metadata: { meeting_title: meetingTitle, source: "meeting_transcript", embedding_model: "gemini-embedding-2", embedding_dimensions: 1536 },
+    metadata: { meeting_title: meetingTitle, source: "meeting_transcript", embedding_model: process.env.OPENAI_EMBEDDING_MODEL ?? "text-embedding-3-small", embedding_dimensions: vectors[index]?.length ?? 0 },
   })));
   if (insertError) throw insertError;
   return chunks.length;

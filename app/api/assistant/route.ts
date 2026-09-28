@@ -1,2 +1,36 @@
-import {NextRequest} from 'next/server'; import {z} from 'zod'; import {requireUser} from '@/lib/auth'; import {embed} from '@/lib/ai/pipeline'; import {GoogleGenAI} from '@google/genai'; import {fail,ok} from '@/lib/response';
-const schema=z.object({message:z.string().min(1).max(4000)}); const gemini=new GoogleGenAI({apiKey:process.env.GEMINI_API_KEY || ''}); export async function POST(req:NextRequest){try{const body=schema.parse(await req.json());const {supabase}=await requireUser();const vector=await embed(body.message);const {data,error}=await supabase.rpc('hybrid_search',{query_text:body.message,query_embedding:vector,match_count:8});if(error)throw error;const context=(data??[]).map((x:{chunk_content:string;metadata:Record<string,unknown>;parent_type:string})=>`[${x.parent_type}] ${x.chunk_content}`).join('\n\n');const result=await gemini.models.generateContent({model:process.env.GEMINI_SUMMARY_MODEL || 'gemini-2.5-flash',contents:[{text:`Answer only from the provided institutional context. If insufficient, say so. Cite source identifiers like [meeting:ID].\n\nContext:\n${context}\n\nQuestion:\n${body.message}`}]});const answer=(result as any)?.text ?? (result as any)?.output_text ?? (result as any)?.candidates?.[0]?.content?.parts?.map((p:any)=>p.text).join('') ?? 'No answer';return ok({answer,sources:(data??[]).map((x:{metadata:Record<string,unknown>})=>x.metadata)})}catch(e){return fail(e instanceof Error?e.message:'Assistant failed',500)}}
+import { NextRequest } from 'next/server';
+import { z } from 'zod';
+import { requireUser } from '@/lib/auth';
+import { embed, answerMeetingQuestion } from '@/lib/ai/pipeline';
+import { fail, ok } from '@/lib/response';
+
+const schema = z.object({ message: z.string().min(1).max(4000) });
+
+export async function POST(req: NextRequest) {
+  try {
+    const body = schema.parse(await req.json());
+    const { supabase } = await requireUser();
+    const vector = await embed(body.message);
+    const { data, error } = await supabase.rpc('hybrid_search', {
+      query_text: body.message,
+      query_embedding: vector,
+      match_count: 8,
+    });
+
+    if (error) throw error;
+
+    const context = (data ?? [])
+      .map((x: { chunk_content: string; metadata: Record<string, unknown>; parent_type: string }) => `[${x.parent_type}] ${x.chunk_content}`)
+      .join('\n\n');
+
+    const answer = await answerMeetingQuestion(context || 'No relevant meeting information was found.', body.message);
+
+    return ok({
+      answer: answer || 'No relevant meeting information was found.',
+      sources: (data ?? []).map((x: { metadata: Record<string, unknown> }) => x.metadata),
+    });
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : 'Assistant failed', 500);
+  }
+}
+

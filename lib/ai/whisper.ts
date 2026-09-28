@@ -37,6 +37,36 @@ async function transcribeViaWorker(file: File): Promise<string> {
   }
 }
 
+async function transcribeViaHuggingFace(file: File): Promise<string> {
+  const apiKey = process.env.HUGGINGFACE_API_KEY?.trim();
+  if (!apiKey) throw new Error("HUGGINGFACE_API_KEY is missing.");
+  const model = process.env.HUGGINGFACE_WHISPER_MODEL?.trim() || "openai/whisper-small";
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10 * 60 * 1000);
+  try {
+    const response = await fetch(`https://router.huggingface.co/hf-inference/models/${model}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": file.type || "application/octet-stream" },
+      body: file,
+      signal: controller.signal,
+    });
+    const bodyText = await response.text();
+    if (!response.ok) {
+      let detail = `Hugging Face Whisper failed (${response.status}).`;
+      try { const parsed = JSON.parse(bodyText) as { error?: string }; if (parsed.error) detail += ` ${parsed.error}`; } catch {}
+      throw new Error(detail);
+    }
+    let payload: { text?: string; error?: string };
+    try { payload = JSON.parse(bodyText) as { text?: string; error?: string }; } catch { throw new Error("Hugging Face Whisper returned an invalid response."); }
+    const transcript = payload.text?.trim();
+    if (!transcript) throw new Error(payload.error || "Hugging Face Whisper returned an empty transcript.");
+    return transcript;
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") throw new Error("Hugging Face Whisper timed out.");
+    throw error;
+  } finally { clearTimeout(timeout); }
+}
+
 async function transcribeLocally(file: File): Promise<string> {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "institutional-whisper-"));
   const safeName = path.basename(file.name || "recording.wav").replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -59,5 +89,6 @@ async function transcribeLocally(file: File): Promise<string> {
 
 export async function transcribeLocalAudio(file: File): Promise<string> {
   if (process.env.WHISPER_WORKER_URL?.trim()) return transcribeViaWorker(file);
+  if (process.env.HUGGINGFACE_API_KEY?.trim()) return transcribeViaHuggingFace(file);
   return transcribeLocally(file);
 }

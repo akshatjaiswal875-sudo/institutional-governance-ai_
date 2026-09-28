@@ -1,6 +1,7 @@
 import { summarizeWithHuggingFace, extractActionsWithHuggingFace, answerWithHuggingFace } from '@/lib/ai/huggingface';
 import { transcribeLocalAudio } from '@/lib/ai/whisper';
 import type { AISummary, AIActionItem } from '@/types/domain';
+import OpenAI from 'openai';
 
 export async function summarizeTranscript(transcript: string): Promise<AISummary> {
   const result = await summarizeWithHuggingFace(transcript);
@@ -25,15 +26,15 @@ export async function extractActions(transcript: string): Promise<AIActionItem[]
     : [];
 }
 
-export async function embed(text: string) {
-  const { default: OpenAI } = await import('openai');
+export async function embed(text: string): Promise<number[]> {
+  if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY is missing.');
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  const response = await client.embeddings.create({
-    model: process.env.OPENAI_EMBEDDING_MODEL ?? 'text-embedding-3-small',
-    input: text,
-  });
+  const model = process.env.OPENAI_EMBEDDING_MODEL ?? 'text-embedding-3-small';
+  const response = await client.embeddings.create({ model, input: text });
   const vector = response.data?.[0]?.embedding;
-  if (!vector || vector.length === 0) throw new Error('OpenAI embedding response was empty.');
+  if (!Array.isArray(vector) || vector.length !== 1536) {
+    throw new Error(`OpenAI embedding returned ${Array.isArray(vector) ? vector.length : 0} dimensions; expected 1536.`);
+  }
   return vector;
 }
 
@@ -44,4 +45,3 @@ export async function answerMeetingQuestion(context: string, question: string) {
 export async function transcribe(file: File) {
   return transcribeLocalAudio(file);
 }
-

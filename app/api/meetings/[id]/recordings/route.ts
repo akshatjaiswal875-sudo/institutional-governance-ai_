@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { recordAudit } from "@/lib/audit";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 const maxFileSize = 100 * 1024 * 1024;
 const allowedPrefixes = ["audio/", "video/"];
@@ -81,22 +82,65 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     const { supabase, profile } = await requireUser(["Super Admin", "Meeting Secretary"]);
     const recordingId = request.nextUrl.searchParams.get("recordingId");
     if (!recordingId) return NextResponse.json({ error: "recordingId is required." }, { status: 400 });
+
+    // Keep authorization on the authenticated client. Use the service-role client only
+    // for the server-side cleanup because Storage/RLS can otherwise block a legitimate
+    // deletion after the route has already authorized the staff member.
     const recording = await getMeetingRecording(supabase, params.id, recordingId);
     if (!recording) return NextResponse.json({ error: "Recording not found." }, { status: 404 });
 
-    const { data: transcript } = await supabase.from("meeting_transcripts").select("id").eq("recording_id", recording.id).maybeSingle();
-    if (transcript) await supabase.from("meeting_ai_analysis").delete().eq("transcript_id", transcript.id);
-    await supabase.from("meeting_transcripts").delete().eq("recording_id", recording.id);
-    await supabase.from("embeddings").delete().eq("parent_type", "meeting").eq("parent_id", params.id);
+    const admin = createAdminClient();
 
-    const storageDelete = await supabase.storage.from("meeting-media").remove([recording.storage_path]);
-    if (storageDelete.error) throw storageDelete.error;
-    const { error } = await supabase.from("meeting_recordings").delete().eq("id", recording.id).eq("meeting_id", params.id);
-    if (error) throw error;
-    await recordAudit(supabase, profile.id, "RECORDING_DELETED", "meeting_recordings", recording.id, { meeting_id: params.id, storage_path: recording.storage_path });
+    const { data: transcript, error: transcriptLookupError } = await admin
+      .from("meeting_transcripts")
+      .select("id")
+      .eq("recording_id", recording.id)
+      .maybeSingle();
+    if (transcriptLookupError) throw transcriptLookupError;
+
+    if (transcript) {
+      const { error } = await admin.from("meeting_ai_analysis").delete().eq("transcript_id", transcript.id);
+      if (error) throw error;
+
+      const { error: transcriptDeleteError } = await admin
+        .from("meeting_transcripts")
+        .delete()
+        .eq("recording_id", recording.id);
+      if (transcriptDeleteError) throw transcriptDeleteError;
+    }
+
+    // Embeddings for this meeting are generated from its transcript, so invalidate
+    // them when the source recording is removed.
+    const { error: embeddingDeleteError } = await admin
+      .from("embeddings")
+      .delete()
+      .eq("parent_type", "meeting")
+      .eq("parent_id", params.id);
+    if (embeddingDeleteError) throw embeddingDeleteError;
+
+    const { error: storageDeleteError } = await admin
+      .storage
+      .from("meeting-media")
+      .remove([recording.storage_path]);
+    if (storageDeleteError) throw storageDeleteError;
+
+    const { error: recordingDeleteError } = await admin
+      .from("meeting_recordings")
+      .delete()
+      .eq("id", recording.id)
+      .eq("meeting_id", params.id);
+    if (recordingDeleteError) throw recordingDeleteError;
+
+    await recordAudit(admin, profile.id, "RECORDING_DELETED", "meeting_recordings", recording.id, {
+      meeting_id: params.id,
+      storage_path: recording.storage_path,
+    });
+
     return NextResponse.json({ data: { deleted: true } });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to delete recording." }, { status: 400 });
+    const message = error instanceof Error ? error.message : "Unable to delete recording.";
+    console.error("[recording-delete]", error);
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }
 

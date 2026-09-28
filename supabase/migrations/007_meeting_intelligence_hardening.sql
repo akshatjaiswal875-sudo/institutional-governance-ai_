@@ -1,13 +1,7 @@
 -- Production hardening for meeting intelligence.
 -- Safe to apply after 006_ai_meeting_intelligence.sql.
 
--- One active recording may exist per meeting. Existing data is not deleted here;
--- resolve any duplicate active rows before applying this unique index in production.
-CREATE UNIQUE INDEX IF NOT EXISTS meeting_recordings_one_active_idx
-ON public.meeting_recordings (meeting_id)
-WHERE status IN ('uploaded','processing','transcribing','analyzing','completed');
-
--- Make retries converge on one transcript/analysis for a recording.
+-- Retries must converge on one transcript/analysis for a recording.
 CREATE UNIQUE INDEX IF NOT EXISTS meeting_transcripts_recording_unique_idx
 ON public.meeting_transcripts (recording_id);
 
@@ -56,7 +50,7 @@ WITH CHECK (
     SELECT 1
     FROM public.meetings m
     WHERE m.id::text = (storage.foldername(name))[2]
-      AND m.created_by = auth.uid()
+      AND (m.created_by = auth.uid() OR public.current_role() = 'Super Admin')
   )
 );
 

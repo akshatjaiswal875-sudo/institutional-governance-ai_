@@ -42,11 +42,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid role." }, { status: 400 });
     }
 
-    const { data: existing } = await supabase.from("users").select("id").eq("email", email).maybeSingle();
+    // All writes/reads involving the users profile table are performed with
+    // the service-role client. The normal browser session is intentionally
+    // restricted by RLS and must not be used for this admin-only operation.
+    const admin = createAdminClient();
+    const { data: existing } = await admin
+      .from("users")
+      .select("id")
+      .eq("email", email)
+      .maybeSingle();
     if (existing) return NextResponse.json({ error: "A user with this email already exists." }, { status: 409 });
 
     const temporaryPassword = generateTemporaryPassword();
-    const admin = createAdminClient();
     const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? new URL(request.url).origin).replace(/\/$/, "");
 
     const { data: created, error: createError } = await admin.auth.admin.createUser({

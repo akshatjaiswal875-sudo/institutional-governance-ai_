@@ -1,2 +1,2 @@
-import { EventsView } from "@/components/phase1-live";
-export default function Events() { return <EventsView />; }
+import { FancyEvents } from "@/components/fancy-governance-pages";
+export default function Events() { return <FancyEvents />; }

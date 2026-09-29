@@ -31,7 +31,7 @@ function LoginForm() {
         return;
       }
 
-      if (data.user?.app_metadata?.must_change_password === true) {
+      if (data.user?.user_metadata?.must_change_password === true) {
         router.replace("/set-password?first_login=1");
         router.refresh();
         return;

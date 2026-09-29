@@ -15,7 +15,11 @@ function parseMeetingRequest(message: string) {
     : lower.includes("today")
       ? new Date()
       : null;
-  const timeMatch = message.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i) ?? message.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
+
+  const timeMatch =
+    message.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i) ??
+    message.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
+
   let dateTime: string | null = null;
   if (date && timeMatch) {
     let hour = Number(timeMatch[1]);
@@ -23,6 +27,7 @@ function parseMeetingRequest(message: string) {
     const meridiem = timeMatch[3]?.toLowerCase();
     if (meridiem === "pm" && hour < 12) hour += 12;
     if (meridiem === "am" && hour === 12) hour = 0;
+
     const ist = new Date(date.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
     ist.setHours(hour, minute, 0, 0);
     const y = ist.getFullYear();
@@ -30,11 +35,18 @@ function parseMeetingRequest(message: string) {
     const d = String(ist.getDate()).padStart(2, "0");
     dateTime = `${y}-${m}-${d}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00+05:30`;
   }
-  const withMatch = message.match(/\bwith\s+(.+?)(?=\s+(?:tomorrow|today|on|at|in|to discuss|about|regarding)\b|[,.]|$)/i);
+
+  const withMatch = message.match(
+    /\bwith\s+(.+?)(?=\s+(?:tomorrow|today|on|at|in|to discuss|about|regarding)\b|[,.]|$)/i,
+  );
   const topicMatch = message.match(/\b(?:to discuss|about|regarding)\s+(.+?)(?:[,.]|$)/i);
-  const locationMatch = message.match(/\b(?:at|in)\s+([^,.]+?)(?=\s+(?:tomorrow|today|to discuss|about|regarding|at)\b|[,.]|$)/i);
+  const locationMatch = message.match(
+    /\b(?:at|in)\s+([^,.]+?)(?=\s+(?:tomorrow|today|to discuss|about|regarding|at)\b|[,.]|$)/i,
+  );
+
   const participantQuery = clean(withMatch?.[1]);
   const topic = clean(topicMatch?.[1]);
+
   return {
     title: topic ? `${topic} Meeting` : participantQuery ? `Meeting with ${participantQuery}` : "New Meeting",
     date: dateTime,
@@ -42,6 +54,27 @@ function parseMeetingRequest(message: string) {
     participantQuery,
     topic,
   };
+}
+
+async function findParticipants(supabase: Awaited<ReturnType<typeof import("@/lib/supabase/server").createClient>>, query: string) {
+  const q = query.trim();
+  if (!q) return [];
+  const pattern = `%${q}%`;
+
+  const [emailResult, roleResult, departmentResult] = await Promise.all([
+    supabase.from("users").select("id,email,role,department").ilike("email", pattern).limit(30),
+    supabase.from("users").select("id,email,role,department").ilike("role", pattern).limit(30),
+    supabase.from("users").select("id,email,role,department").ilike("department", pattern).limit(30),
+  ]);
+
+  const error = emailResult.error ?? roleResult.error ?? departmentResult.error;
+  if (error) throw error;
+
+  const byId = new Map<string, any>();
+  for (const row of [...(emailResult.data ?? []), ...(roleResult.data ?? []), ...(departmentResult.data ?? [])]) {
+    byId.set(row.id, row);
+  }
+  return [...byId.values()].slice(0, 30);
 }
 
 export async function POST(request: Request) {
@@ -53,6 +86,7 @@ export async function POST(request: Request) {
     if (action === "prepare") {
       const message = clean(body?.message);
       if (!message) return NextResponse.json({ error: "Describe the meeting first." }, { status: 400 });
+
       const draft = parseMeetingRequest(message);
       const needs: string[] = [];
       if (!draft.date) needs.push("date and time");
@@ -60,16 +94,10 @@ export async function POST(request: Request) {
 
       let participants: any[] = [];
       if (draft.participantQuery) {
-        const q = draft.participantQuery.replace(/[%_,]/g, "");
-        const { data, error } = await supabase
-          .from("users")
-          .select("id,email,role,department")
-          .or(`email.ilike.%${q}%,role.ilike.%${q}%,department.ilike.%${q}%`)
-          .limit(30);
-        if (error) throw error;
-        participants = data ?? [];
+        participants = await findParticipants(supabase, draft.participantQuery);
       }
       if (draft.participantQuery && !participants.length) needs.push("a valid participant selection");
+
       return NextResponse.json({ data: { draft, participants, needs } });
     }
 
@@ -81,15 +109,9 @@ export async function POST(request: Request) {
       const title = clean(draft?.title);
       const date = clean(draft?.date);
       const location = clean(draft?.location) || null;
+
       if (!title || !date) return NextResponse.json({ error: "Meeting title and date/time are required." }, { status: 400 });
       if (!participantIds.length) return NextResponse.json({ error: "Select at least one participant." }, { status: 400 });
-
-      const { data: meeting, error: meetingError } = await supabase
-        .from("meetings")
-        .insert({ title, date, location, type: draft?.type === "online" ? "online" : "offline", created_by: user.id, status: "Draft" })
-        .select("id,title,date,location,created_by,status")
-        .single();
-      if (meetingError) throw meetingError;
 
       const { data: validUsers, error: usersError } = await supabase
         .from("users")
@@ -97,6 +119,20 @@ export async function POST(request: Request) {
         .in("id", participantIds);
       if (usersError) throw usersError;
       if (!validUsers?.length) return NextResponse.json({ error: "No valid participants were selected." }, { status: 400 });
+
+      const { data: meeting, error: meetingError } = await supabase
+        .from("meetings")
+        .insert({
+          title,
+          date,
+          location,
+          type: draft?.type === "online" ? "online" : "offline",
+          created_by: user.id,
+          status: "Draft",
+        })
+        .select("id,title,date,location,created_by,status")
+        .single();
+      if (meetingError) throw meetingError;
 
       const { data: insertedParticipants, error: participantError } = await supabase
         .from("participants")
@@ -111,11 +147,16 @@ export async function POST(request: Request) {
         .order("sort_order");
       if (agendaError) throw agendaError;
 
-      await recordAudit(supabase, profile.id, "CREATE_MEETING", "meetings", meeting.id, { title, status: "Draft", source: "AI Assistant" });
+      await recordAudit(supabase, profile.id, "CREATE_MEETING", "meetings", meeting.id, {
+        title,
+        status: "Draft",
+        source: "AI Assistant",
+      });
 
       const admin = createAdminClient();
       const { data: organizer } = await admin.from("users").select("email").eq("id", user.id).maybeSingle();
       const invitationErrors: string[] = [];
+
       for (const participant of insertedParticipants ?? []) {
         const recipient = validUsers.find((u) => u.id === participant.user_id);
         if (!recipient) continue;
@@ -140,8 +181,16 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ error: "Unsupported meeting action." }, { status: 400 });
   } catch (error) {
-    if (error instanceof Error && error.message === "UNAUTHORIZED") return NextResponse.json({ error: "Authentication required." }, { status: 401 });
-    if (error instanceof Error && error.message === "FORBIDDEN") return NextResponse.json({ error: "Only Super Admin can create meetings through the AI Assistant." }, { status: 403 });
+    console.error("[assistant/meeting-action]", error);
+    if (error instanceof Error && error.message === "UNAUTHORIZED") {
+      return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    }
+    if (error instanceof Error && error.message === "FORBIDDEN") {
+      return NextResponse.json({ error: "Only Super Admin can create meetings through the AI Assistant." }, { status: 403 });
+    }
+    if (error instanceof Error && error.message === "PROFILE_NOT_FOUND") {
+      return NextResponse.json({ error: "Your login is missing a public.users profile. Ask a Super Admin to create/link your profile." }, { status: 403 });
+    }
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to process meeting action." }, { status: 500 });
   }
 }

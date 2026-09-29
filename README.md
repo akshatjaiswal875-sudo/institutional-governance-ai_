@@ -47,3 +47,5 @@ For Vercel, add the same environment variables under Project Settings → Enviro
 
 ## 8. Security
 RLS is enabled for all application tables, with role-aware policies. The application also checks roles before privileged server actions. Never ship the service-role key to the browser.
+
+<!-- Keep production deployment history traceable. -->

@@ -34,11 +34,9 @@ export async function GET(req: Request) {
       if (error) throw error;
     }
 
-    // Invite links must land on the password setup page before the user can
-    // enter the application. Recovery links use the reset-password page.
-    // For PKCE/code callbacks Supabase may not include `type`, so an explicit
-    // next=/set-password is honored and the no-next code flow defaults to
-    // password setup rather than accidentally sending a new invite to login.
+    // Invitations must always go through password setup. For PKCE invitation
+    // links Supabase may omit `type`, so the explicit next parameter is also
+    // honored. If a code callback has no next parameter, default to setup.
     const destination = type === "invite"
       ? "/set-password"
       : type === "recovery"

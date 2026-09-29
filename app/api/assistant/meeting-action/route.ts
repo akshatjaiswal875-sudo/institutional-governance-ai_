@@ -4,6 +4,10 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { recordAudit } from "@/lib/audit";
 import { sendMeetingInvitation } from "@/lib/invitations";
 
+const USER_ROLES = ["Super Admin", "Meeting Secretary", "Faculty / Officer", "Member", "Auditor"] as const;
+
+type UserRole = (typeof USER_ROLES)[number];
+
 function clean(value: unknown) { return typeof value === "string" ? value.trim() : ""; }
 
 function parseMeetingRequest(message: string) {
@@ -20,11 +24,16 @@ function parseMeetingRequest(message: string) {
   const withMatch = message.match(/\bwith\s+(.+?)(?=\s+(?:tomorrow|today|on|at|in|to discuss|about|regarding)\b|[,.]|$)/i);
   const topicMatch = message.match(/\b(?:to discuss|about|regarding)\s+(.+?)(?:[,.]|$)/i);
   const locationMatch = message.match(/\b(?:at|in)\s+([^,.]+?)(?=\s+(?:tomorrow|today|to discuss|about|regarding|at)\b|[,.]|$)/i);
-  const participantQuery = clean(withMatch?.[1]); const topic = clean(topicMatch?.[1]);
+  const participantQuery = clean(withMatch?.[1]).replace(/^the\s+/i, "");
+  const topic = clean(topicMatch?.[1]);
   return { title: topic ? `${topic} Meeting` : participantQuery ? `Meeting with ${participantQuery}` : "New Meeting", date: dateTime, location: clean(locationMatch?.[1]) || null, participantQuery, topic };
 }
 
 function ilikePattern(value: string) { return `%${value.replace(/[\\%_]/g, (char) => `\\${char}`)}%`; }
+
+function asRole(value: string): UserRole | null {
+  return (USER_ROLES as readonly string[]).includes(value) ? value as UserRole : null;
+}
 
 export async function POST(request: Request) {
   try {
@@ -38,18 +47,20 @@ export async function POST(request: Request) {
       let participants: any[] = [];
       if (draft.participantQuery) {
         const q = draft.participantQuery; const pattern = ilikePattern(q);
-        // public.users intentionally exposes only the caller's own row through
-        // normal RLS. This endpoint is Super Admin-only, so use the service
-        // role for participant discovery. role is a Postgres enum, therefore
-        // use exact equality instead of ILIKE, which PostgreSQL rejects for enums.
-        const [emailResult, roleResult, departmentResult] = await Promise.all([
+        // role is a PostgreSQL enum. Never send arbitrary natural-language text
+        // such as "Finance Committee" into an enum comparison: that produces
+        // SQLSTATE 22P02 and used to surface as the generic meeting-action error.
+        const role = asRole(q);
+        const [emailResult, departmentResult, roleResult] = await Promise.all([
           admin.from("users").select("id,email,role,department").ilike("email", pattern).limit(30),
-          admin.from("users").select("id,email,role,department").eq("role", q).limit(30),
           admin.from("users").select("id,email,role,department").ilike("department", pattern).limit(30),
+          role
+            ? admin.from("users").select("id,email,role,department").eq("role", role).limit(30)
+            : Promise.resolve({ data: [], error: null }),
         ]);
-        const error = emailResult.error ?? roleResult.error ?? departmentResult.error; if (error) throw error;
+        const error = emailResult.error ?? departmentResult.error ?? roleResult.error; if (error) throw error;
         const byId = new Map<string, any>();
-        for (const row of [...(emailResult.data ?? []), ...(roleResult.data ?? []), ...(departmentResult.data ?? [])]) byId.set(row.id, row);
+        for (const row of [...(emailResult.data ?? []), ...(departmentResult.data ?? []), ...(roleResult.data ?? [])]) byId.set(row.id, row);
         participants = [...byId.values()].slice(0, 30);
       }
       if (draft.participantQuery && !participants.length) needs.push("a valid participant selection");

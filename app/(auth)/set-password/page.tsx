@@ -2,11 +2,10 @@
 
 import { FormEvent, Suspense, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 
 function SetPasswordForm() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [email, setEmail] = useState("");
@@ -18,9 +17,9 @@ function SetPasswordForm() {
     let active = true;
     const check = async () => {
       const supabase = createClient();
-      const { data } = await supabase.auth.getUser();
+      const { data, error: userError } = await supabase.auth.getUser();
       if (!active) return;
-      if (!data.user) {
+      if (userError || !data.user) {
         setError("This invitation link is invalid or has expired. Please request a new invitation.");
       } else {
         setEmail(data.user.email ?? "");
@@ -36,12 +35,19 @@ function SetPasswordForm() {
     setError("");
     if (password.length < 8) return setError("Password must be at least 8 characters.");
     if (password !== confirm) return setError("Passwords do not match.");
+
     setSaving(true);
     const supabase = createClient();
     const { error: updateError } = await supabase.auth.updateUser({ password });
-    setSaving(false);
-    if (updateError) return setError(updateError.message);
-    router.replace("/dashboard");
+    if (updateError) {
+      setSaving(false);
+      setError(updateError.message);
+      return;
+    }
+
+    // Sign out so the invited user explicitly logs in with the password they created.
+    await supabase.auth.signOut();
+    router.replace("/login?password_created=1");
     router.refresh();
   }
 
@@ -49,16 +55,15 @@ function SetPasswordForm() {
 
   return (
     <div className="mx-auto mt-20 max-w-md card p-8">
-      <div className="mb-6">
-        <p className="mb-2 text-sm font-semibold uppercase tracking-wider text-cyan-400">GovAI</p>
-        <h1 className="text-2xl font-bold">Complete your account</h1>
-        <p className="mt-2 text-slate-400">Set a password to finish accepting your invitation.</p>
-        {email && <p className="mt-3 text-sm text-slate-300">Invited email: {email}</p>}
-      </div>
-      <form onSubmit={submit} className="space-y-4">
-        <input className="input" type="password" minLength={8} placeholder="New password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-        <input className="input" type="password" minLength={8} placeholder="Confirm password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required />
-        <button className="btn btn-primary w-full" disabled={saving}>{saving ? "Creating account..." : "Create account"}</button>
+      <p className="mb-2 text-sm font-semibold uppercase tracking-wider text-cyan-400">GovAI</p>
+      <h1 className="text-2xl font-bold">Create your password</h1>
+      <p className="mt-2 text-slate-400">Finish accepting your invitation by creating a secure password.</p>
+      {email && <p className="mt-3 text-sm text-slate-300">Account: {email}</p>}
+      <form onSubmit={submit} className="mt-6 space-y-4">
+        <input className="input" type="password" minLength={8} placeholder="New password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="new-password" />
+        <input className="input" type="password" minLength={8} placeholder="Confirm password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required autoComplete="new-password" />
+        <p className="text-xs text-slate-400">Use at least 8 characters.</p>
+        <button className="btn btn-primary w-full" disabled={saving}>{saving ? "Creating password..." : "Create password"}</button>
         {error && <p className="text-red-400">{error}</p>}
       </form>
     </div>

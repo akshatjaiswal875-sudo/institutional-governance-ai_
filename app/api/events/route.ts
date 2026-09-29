@@ -6,10 +6,7 @@ import { recordAudit } from "@/lib/audit";
 
 export async function GET() {
   try {
-    // The calendar is rendered inside the authenticated application, but its
-    // read path must not depend on a user's profile/RLS evaluation. Use the
-    // server-only service-role client for the read while keeping RLS intact
-    // for all normal browser/database access and all writes.
+    await requireUser();
     const admin = createAdminClient();
     const { data, error } = await admin
       .from("events")
@@ -28,6 +25,9 @@ export async function GET() {
 
     return NextResponse.json({ data: data ?? [] }, { status: 200 });
   } catch (error) {
+    if (error instanceof Error && error.message === "UNAUTHORIZED") {
+      return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    }
     console.error("GET /api/events unexpected error:", error);
     return NextResponse.json({ error: "Unable to load events." }, { status: 500 });
   }
@@ -53,5 +53,9 @@ export async function POST(request: Request) {
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
     await recordAudit(supabase, profile.id, "CREATE_EVENT", "events", data.id, { title });
     return NextResponse.json({ data }, { status: 201 });
-  } catch { return NextResponse.json({ error: "Unable to create event." }, { status: 401 }); }
+  } catch (error) {
+    if (error instanceof Error && error.message === "UNAUTHORIZED") return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    if (error instanceof Error && error.message === "FORBIDDEN") return NextResponse.json({ error: "You do not have permission to create events." }, { status: 403 });
+    return NextResponse.json({ error: "Unable to create event." }, { status: 500 });
+  }
 }

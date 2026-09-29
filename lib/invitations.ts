@@ -1,3 +1,5 @@
+import nodemailer from "nodemailer";
+
 type MeetingInvitation = {
   recipientEmail: string;
   recipientName: string;
@@ -9,22 +11,33 @@ type MeetingInvitation = {
 };
 
 export async function sendMeetingInvitation(invitation: MeetingInvitation): Promise<void> {
-  const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.RESEND_FROM_EMAIL;
-  if (!apiKey || !from) {
-    throw new Error("Email invitations are not configured. Set RESEND_API_KEY and RESEND_FROM_EMAIL on the server.");
+  const user = process.env.GMAIL_SMTP_USER?.trim();
+  const appPassword = process.env.GMAIL_SMTP_APP_PASSWORD?.replace(/\s+/g, "").trim();
+
+  if (!user || !appPassword) {
+    throw new Error(
+      "Email invitations are not configured. Set GMAIL_SMTP_USER and GMAIL_SMTP_APP_PASSWORD on the server."
+    );
   }
 
-  const agenda = invitation.agenda.length ? invitation.agenda.map(item => `- ${item}`).join("\n") : "No agenda has been added yet.";
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
+  const transporter = nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true,
+    auth: {
+      user,
+      pass: appPassword,
     },
-    body: JSON.stringify({
-      from,
-      to: [invitation.recipientEmail],
+  });
+
+  const agenda = invitation.agenda.length
+    ? invitation.agenda.map((item) => `- ${item}`).join("\n")
+    : "No agenda has been added yet.";
+
+  try {
+    await transporter.sendMail({
+      from: `Institutional Governance <${user}>`,
+      to: invitation.recipientEmail,
       subject: `Meeting invitation: ${invitation.meetingTitle}`,
       text: [
         `Hello ${invitation.recipientName || invitation.recipientEmail},`,
@@ -37,10 +50,11 @@ export async function sendMeetingInvitation(invitation: MeetingInvitation): Prom
         "Agenda:",
         agenda,
       ].join("\n"),
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Invitation email failed with status ${response.status}.`);
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown SMTP error";
+    throw new Error(`Invitation email could not be sent: ${message}`);
+  } finally {
+    transporter.close();
   }
 }

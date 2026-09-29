@@ -3,36 +3,38 @@ type HuggingFaceResult = {
   answer?: string;
   summary?: string;
   text?: string;
-  error?: string | { message?: string; type?: string; code?: string };
-  message?: string;
+  error?: unknown;
+  message?: unknown;
   choices?: Array<{ message?: { content?: string }; text?: string }>;
 };
 
 const MAX_TRANSCRIPT_CHARS = 120_000;
-const DEFAULT_ANALYSIS_MODEL = "google/gemma-2-2b-it:fastest";
+const DEFAULT_ANALYSIS_MODEL = "google/gemma-2-2b-it";
 
 function resolveAnalysisModel(configured?: string) {
   const model = configured?.trim();
-  if (!model || model === "mistralai/Mistral-7B-Instruct-v0.2" || model === "google/gemma-2-2b-it") {
-    return DEFAULT_ANALYSIS_MODEL;
-  }
-  return model.includes(":") ? model : `${model}:fastest`;
+  if (!model || model === "mistralai/Mistral-7B-Instruct-v0.2") return DEFAULT_ANALYSIS_MODEL;
+  return model;
 }
 
-function providerErrorMessage(value: unknown): string | null {
+function formatProviderError(value: unknown): string {
   if (typeof value === "string" && value.trim()) return value.trim();
   if (value && typeof value === "object") {
-    const obj = value as { message?: unknown; error?: unknown; type?: unknown; code?: unknown };
-    if (typeof obj.message === "string" && obj.message.trim()) return obj.message.trim();
-    if (typeof obj.error === "string" && obj.error.trim()) return obj.error.trim();
-    if (obj.error && typeof obj.error === "object") {
-      const nested = providerErrorMessage(obj.error);
-      if (nested) return nested;
+    const obj = value as Record<string, unknown>;
+    const message = obj.message;
+    if (typeof message === "string" && message.trim()) return message.trim();
+    const nested = obj.error;
+    if (nested && nested !== value) {
+      const nestedMessage = formatProviderError(nested);
+      if (nestedMessage) return nestedMessage;
     }
-    const parts = [obj.type, obj.code].filter((v): v is string => typeof v === "string" && v.trim());
-    if (parts.length) return parts.join(": ");
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return "Provider returned an object error.";
+    }
   }
-  return null;
+  return String(value ?? "Unknown provider error");
 }
 
 async function callHuggingFace(prompt: string, model: string) {
@@ -66,7 +68,9 @@ async function callHuggingFace(prompt: string, model: string) {
       try { payload = JSON.parse(bodyText) as HuggingFaceResult; } catch { /* non-JSON response */ }
 
       if (!response.ok) {
-        const detail = providerErrorMessage(payload?.error) || providerErrorMessage(payload?.message) || `HTTP ${response.status}`;
+        const detail = payload
+          ? formatProviderError(payload.error ?? payload.message)
+          : bodyText.trim() || `HTTP ${response.status}`;
         lastError = `Hugging Face request failed (${response.status}): ${detail}`;
         if (![429, 500, 502, 503, 504].includes(response.status) || attempt === 3) throw new Error(lastError);
         await new Promise((resolve) => setTimeout(resolve, attempt * 1200));
@@ -74,8 +78,7 @@ async function callHuggingFace(prompt: string, model: string) {
       }
 
       if (!payload) throw new Error("Hugging Face returned an invalid response.");
-      const payloadError = providerErrorMessage(payload.error);
-      if (payloadError) throw new Error(`Hugging Face error: ${payloadError}`);
+      if (payload.error) throw new Error(`Hugging Face error: ${formatProviderError(payload.error)}`);
       const content = payload.choices?.[0]?.message?.content
         ?? payload.choices?.[0]?.text
         ?? payload.generated_text

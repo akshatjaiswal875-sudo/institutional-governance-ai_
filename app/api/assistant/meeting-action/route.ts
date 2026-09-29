@@ -5,11 +5,8 @@ import { recordAudit } from "@/lib/audit";
 import { sendMeetingInvitation } from "@/lib/invitations";
 
 const USER_ROLES = ["Super Admin", "Meeting Secretary", "Faculty / Officer", "Member", "Auditor"] as const;
-
 type UserRole = (typeof USER_ROLES)[number];
-
 function clean(value: unknown) { return typeof value === "string" ? value.trim() : ""; }
-
 function parseMeetingRequest(message: string) {
   const lower = message.toLowerCase();
   const date = lower.includes("tomorrow") ? new Date(Date.now() + 86400000) : lower.includes("today") ? new Date() : null;
@@ -28,12 +25,8 @@ function parseMeetingRequest(message: string) {
   const topic = clean(topicMatch?.[1]);
   return { title: topic ? `${topic} Meeting` : participantQuery ? `Meeting with ${participantQuery}` : "New Meeting", date: dateTime, location: clean(locationMatch?.[1]) || null, participantQuery, topic };
 }
-
 function ilikePattern(value: string) { return `%${value.replace(/[\\%_]/g, (char) => `\\${char}`)}%`; }
-
-function asRole(value: string): UserRole | null {
-  return (USER_ROLES as readonly string[]).includes(value) ? value as UserRole : null;
-}
+function asRole(value: string): UserRole | null { return (USER_ROLES as readonly string[]).includes(value) ? value as UserRole : null; }
 
 export async function POST(request: Request) {
   try {
@@ -45,26 +38,32 @@ export async function POST(request: Request) {
       const draft = parseMeetingRequest(message); const needs: string[] = [];
       if (!draft.date) needs.push("date and time"); if (!draft.participantQuery) needs.push("participants");
       let participants: any[] = [];
+      let usedFallback = false;
       if (draft.participantQuery) {
-        const q = draft.participantQuery; const pattern = ilikePattern(q);
-        // role is a PostgreSQL enum. Never send arbitrary natural-language text
-        // such as "Finance Committee" into an enum comparison: that produces
-        // SQLSTATE 22P02 and used to surface as the generic meeting-action error.
-        const role = asRole(q);
+        const q = draft.participantQuery; const pattern = ilikePattern(q); const role = asRole(q);
+        // Never compare arbitrary natural-language text to the user_role enum.
         const [emailResult, departmentResult, roleResult] = await Promise.all([
           admin.from("users").select("id,email,role,department").ilike("email", pattern).limit(30),
           admin.from("users").select("id,email,role,department").ilike("department", pattern).limit(30),
-          role
-            ? admin.from("users").select("id,email,role,department").eq("role", role).limit(30)
-            : Promise.resolve({ data: [], error: null }),
+          role ? admin.from("users").select("id,email,role,department").eq("role", role).limit(30) : Promise.resolve({ data: [], error: null }),
         ]);
         const error = emailResult.error ?? departmentResult.error ?? roleResult.error; if (error) throw error;
         const byId = new Map<string, any>();
         for (const row of [...(emailResult.data ?? []), ...(departmentResult.data ?? []), ...(roleResult.data ?? [])]) byId.set(row.id, row);
         participants = [...byId.values()].slice(0, 30);
+
+        // A phrase such as "Finance Committee" may describe a group that is
+        // not stored as a role/department. Do not fail the request; give the
+        // Super Admin a bounded manual selection list instead.
+        if (!participants.length) {
+          const fallback = await admin.from("users").select("id,email,role,department").order("email").limit(50);
+          if (fallback.error) throw fallback.error;
+          participants = fallback.data ?? [];
+          usedFallback = participants.length > 0;
+        }
       }
       if (draft.participantQuery && !participants.length) needs.push("a valid participant selection");
-      return NextResponse.json({ data: { draft, participants, needs } });
+      return NextResponse.json({ data: { draft, participants, needs, usedFallback } });
     }
 
     if (action === "confirm") {
@@ -79,7 +78,10 @@ export async function POST(request: Request) {
       const { data: meeting, error: meetingError } = await supabase.from("meetings").insert({ title, date, location, type: draft?.type === "online" ? "online" : "offline", created_by: user.id, status: "Draft" }).select("id,title,date,location,created_by,status").single();
       if (meetingError) throw meetingError;
       const { data: insertedParticipants, error: participantError } = await admin.from("participants").insert(validUsers.map((u) => ({ meeting_id: meeting.id, user_id: u.id, attendance_status: "Invited" }))).select("id,user_id");
-      if (participantError) throw participantError;
+      if (participantError) {
+        await admin.from("meetings").delete().eq("id", meeting.id);
+        throw participantError;
+      }
       const { data: agenda, error: agendaError } = await supabase.from("agenda_items").select("topic,sort_order").eq("meeting_id", meeting.id).order("sort_order");
       if (agendaError) throw agendaError;
       await recordAudit(supabase, profile.id, "CREATE_MEETING", "meetings", meeting.id, { title, status: "Draft", source: "AI Assistant" });

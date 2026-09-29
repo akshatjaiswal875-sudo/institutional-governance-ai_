@@ -15,7 +15,10 @@ export async function extractActions(transcript: string): Promise<AIActionItem[]
 }
 
 export async function embed(text: string): Promise<number[]> {
-  if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY is missing.');
+  if (process.env.ENABLE_OPENAI_EMBEDDINGS !== 'true') {
+    throw new Error('OpenAI embeddings are disabled.');
+  }
+  if (!process.env.OPENAI_API_KEY?.trim()) throw new Error('OPENAI_API_KEY is missing.');
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const model = process.env.OPENAI_EMBEDDING_MODEL ?? 'text-embedding-3-small';
   const response = await withRetry(() => client.embeddings.create({ model, input: text }));

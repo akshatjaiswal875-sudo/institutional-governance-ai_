@@ -25,9 +25,15 @@ function LoginForm() {
 
     try {
       const s = createClient();
-      const { error } = await s.auth.signInWithPassword({ email, password });
+      const { data, error } = await s.auth.signInWithPassword({ email, password });
       if (error) {
         setError(error.message);
+        return;
+      }
+
+      if (data.user?.user_metadata?.must_change_password === true) {
+        router.replace("/set-password?first_login=1");
+        router.refresh();
         return;
       }
 

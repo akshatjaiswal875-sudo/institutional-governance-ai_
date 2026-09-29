@@ -49,6 +49,19 @@ function cleanIlikeTerm(term: string) {
   return term.replace(/[\\%_]/g, (value) => `\\${value}`);
 }
 
+function addSource(
+  sources: AssistantSource[],
+  sourceKeys: Set<string>,
+  parent_type: string,
+  parent_id: string,
+  metadata: Record<string, unknown> = {},
+) {
+  const key = `${parent_type}:${parent_id}`;
+  if (sourceKeys.has(key)) return;
+  sourceKeys.add(key);
+  sources.push({ parent_type, parent_id, ...metadata });
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = schema.parse(await req.json());
@@ -66,8 +79,7 @@ export async function POST(req: NextRequest) {
       if (!error) {
         for (const row of ((data ?? []) as SearchRow[])) {
           rows.push(row);
-          sourceKeys.add(`${row.parent_type}:${row.parent_id}`);
-          sources.push({ ...row.metadata, parent_type: row.parent_type, parent_id: row.parent_id });
+          addSource(sources, sourceKeys, row.parent_type, row.parent_id, row.metadata);
         }
       } else {
         console.warn('[assistant] keyword_search unavailable; using direct retrieval:', error.message);
@@ -103,11 +115,8 @@ export async function POST(req: NextRequest) {
 
       for (const meeting of directMeetings) {
         const key = `meeting:${meeting.id}`;
-        if (!sourceKeys.has(key)) {
-          sourceKeys.add(key);
-          contextParts.push(`[${key}:title-match] ${JSON.stringify(meeting)}`);
-          sources.push({ parent_type: 'meeting', parent_id: meeting.id, title: meeting.title, retrieval: 'title-match' });
-        }
+        contextParts.push(`[${key}:title-match] ${JSON.stringify(meeting)}`);
+        addSource(sources, sourceKeys, 'meeting', meeting.id, { title: meeting.title, retrieval: 'title-match' });
       }
     }
 
@@ -121,11 +130,8 @@ export async function POST(req: NextRequest) {
       directMeetings = data ?? [];
       for (const meeting of directMeetings) {
         const key = `meeting:${meeting.id}`;
-        if (!sourceKeys.has(key)) {
-          sourceKeys.add(key);
-          contextParts.push(`[${key}:recent] ${JSON.stringify(meeting)}`);
-          sources.push({ parent_type: 'meeting', parent_id: meeting.id, title: meeting.title, retrieval: 'recent' });
-        }
+        contextParts.push(`[${key}:recent] ${JSON.stringify(meeting)}`);
+        addSource(sources, sourceKeys, 'meeting', meeting.id, { title: meeting.title, retrieval: 'recent' });
       }
     }
 
@@ -134,16 +140,16 @@ export async function POST(req: NextRequest) {
         .map((meeting) => meeting.id)
         .concat(rows.filter((row) => row.parent_type === 'meeting').map((row) => row.parent_id))
         .concat(rows.map((row) => row.metadata?.meeting_id).filter((id): id is string => typeof id === 'string')),
-    );
+    ).slice(0, 12);
 
     if (meetingIds.length) {
       const [meetings, transcripts, analyses, decisions, minutes, actionItems] = await Promise.all([
         supabase.from('meetings').select('id,title,date,location,type,status,created_by,assigned_approver_id').in('id', meetingIds),
-        supabase.from('meeting_transcripts').select('id,meeting_id,recording_id,transcript,status,created_at').in('meeting_id', meetingIds).order('created_at', { ascending: false }),
-        supabase.from('meeting_ai_analysis').select('id,meeting_id,transcript_id,summary,key_points,suggested_minutes,extracted_decisions,extracted_action_items,model_name,status,created_at').in('meeting_id', meetingIds).order('created_at', { ascending: false }),
-        supabase.from('decisions').select('id,meeting_id,minute_id,decision_text,action_item,assignee_id,due_date,status').in('meeting_id', meetingIds),
-        supabase.from('minutes').select('id,meeting_id,raw_transcript,summary,version,is_approved,created_at,updated_at').in('meeting_id', meetingIds).order('created_at', { ascending: false }),
-        supabase.from('action_items').select('id,meeting_id,decision_id,task,assignee_id,due_date,priority,status,created_by,created_at,updated_at').in('meeting_id', meetingIds),
+        supabase.from('meeting_transcripts').select('id,meeting_id,recording_id,transcript,status,created_at').in('meeting_id', meetingIds).order('created_at', { ascending: false }).limit(24),
+        supabase.from('meeting_ai_analysis').select('id,meeting_id,transcript_id,summary,key_points,suggested_minutes,extracted_decisions,extracted_action_items,model_name,status,created_at').in('meeting_id', meetingIds).order('created_at', { ascending: false }).limit(24),
+        supabase.from('decisions').select('id,meeting_id,minute_id,decision_text,action_item,assignee_id,due_date,status').in('meeting_id', meetingIds).limit(100),
+        supabase.from('minutes').select('id,meeting_id,raw_transcript,summary,version,is_approved,created_at,updated_at').in('meeting_id', meetingIds).order('created_at', { ascending: false }).limit(24),
+        supabase.from('action_items').select('id,meeting_id,decision_id,task,assignee_id,due_date,priority,status,created_by,created_at,updated_at').in('meeting_id', meetingIds).limit(100),
       ]);
 
       if (meetings.error) throw meetings.error;
@@ -156,48 +162,60 @@ export async function POST(req: NextRequest) {
       for (const meeting of meetings.data ?? []) {
         const key = `meeting:${meeting.id}`;
         contextParts.push(`[${key}:details] ${JSON.stringify(meeting)}`);
+        addSource(sources, sourceKeys, 'meeting', meeting.id, { title: meeting.title, retrieval: 'details' });
       }
 
       for (const transcript of transcripts.data ?? []) {
         contextParts.push(`[meeting_transcript:${transcript.id}] meeting_id=${transcript.meeting_id}\n${transcript.transcript}`);
+        addSource(sources, sourceKeys, 'meeting_transcript', transcript.id, { meeting_id: transcript.meeting_id, status: transcript.status });
       }
 
       for (const analysis of analyses.data ?? []) {
         contextParts.push(`[meeting_ai_analysis:${analysis.id}] meeting_id=${analysis.meeting_id}\nsummary=${analysis.summary}\nkey_points=${JSON.stringify(analysis.key_points)}\nsuggested_minutes=${analysis.suggested_minutes ?? ''}\nextracted_decisions=${JSON.stringify(analysis.extracted_decisions)}\nextracted_action_items=${JSON.stringify(analysis.extracted_action_items)}`);
+        addSource(sources, sourceKeys, 'meeting_ai_analysis', analysis.id, { meeting_id: analysis.meeting_id, status: analysis.status });
       }
 
       for (const decision of decisions.data ?? []) {
         contextParts.push(`[decision:${decision.id}] meeting_id=${decision.meeting_id} decision=${decision.decision_text} action_item=${decision.action_item ?? ''} assignee_id=${decision.assignee_id ?? ''} due_date=${decision.due_date ?? ''} status=${decision.status}`);
+        addSource(sources, sourceKeys, 'decision', decision.id, { meeting_id: decision.meeting_id });
       }
 
       for (const item of actionItems.data ?? []) {
         contextParts.push(`[action_item:${item.id}] meeting_id=${item.meeting_id} decision_id=${item.decision_id ?? ''} task=${item.task} assignee_id=${item.assignee_id ?? ''} due_date=${item.due_date ?? ''} priority=${item.priority} status=${item.status}`);
+        addSource(sources, sourceKeys, 'action_item', item.id, { meeting_id: item.meeting_id, status: item.status });
       }
 
       for (const minute of minutes.data ?? []) {
         addSection(contextParts, `[minutes:${minute.id}] meeting_id=${minute.meeting_id}`, minute.summary);
         addSection(contextParts, `[minutes:${minute.id}:raw]`, minute.raw_transcript);
+        addSource(sources, sourceKeys, 'minutes', minute.id, { meeting_id: minute.meeting_id, version: minute.version, is_approved: minute.is_approved });
       }
     }
 
-    const policyIds = unique(rows.filter((row) => row.parent_type === 'policy').map((row) => row.parent_id));
+    const policyIds = unique(rows.filter((row) => row.parent_type === 'policy').map((row) => row.parent_id)).slice(0, 12);
     if (policyIds.length) {
       const { data: policies, error: policyError } = await supabase
         .from('policies')
         .select('id,title,content,version,status,effective_date,updated_at')
         .in('id', policyIds);
       if (policyError) throw policyError;
-      for (const policy of policies ?? []) contextParts.push(`[policy:${policy.id}] ${JSON.stringify(policy)}`);
+      for (const policy of policies ?? []) {
+        contextParts.push(`[policy:${policy.id}] ${JSON.stringify(policy)}`);
+        addSource(sources, sourceKeys, 'policy', policy.id, { title: policy.title, version: policy.version, status: policy.status });
+      }
     }
 
-    const eventIds = unique(rows.filter((row) => row.parent_type === 'event').map((row) => row.parent_id));
+    const eventIds = unique(rows.filter((row) => row.parent_type === 'event').map((row) => row.parent_id)).slice(0, 12);
     if (eventIds.length) {
       const { data: events, error: eventError } = await supabase
         .from('events')
         .select('id,title,start_time,end_time,description,location')
         .in('id', eventIds);
       if (eventError) throw eventError;
-      for (const event of events ?? []) contextParts.push(`[event:${event.id}] ${JSON.stringify(event)}`);
+      for (const event of events ?? []) {
+        contextParts.push(`[event:${event.id}] ${JSON.stringify(event)}`);
+        addSource(sources, sourceKeys, 'event', event.id, { title: event.title });
+      }
     }
 
     const context = contextParts.join('\n\n').slice(0, 115_000);
@@ -208,7 +226,7 @@ export async function POST(req: NextRequest) {
 
     return ok({
       answer: answer || 'No relevant institutional records were found.',
-      sources,
+      sources: sources.slice(0, 50),
     });
   } catch (e) {
     console.error('[assistant]', e);

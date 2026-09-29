@@ -1,7 +1,7 @@
 "use client";
 
-import { FormEvent, useState } from "react";
-import { Bot, CalendarPlus, Send, Sparkles, UserRound, X } from "lucide-react";
+import { FormEvent, ReactNode, useState } from "react";
+import { Bot, CalendarPlus, Check, Send, Sparkles, UserRound, X } from "lucide-react";
 
 async function api<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, { ...options, headers: { "Content-Type": "application/json", ...(options?.headers ?? {}) } });
@@ -13,6 +13,82 @@ async function api<T>(url: string, options?: RequestInit): Promise<T> {
 type Message = { role: "user" | "assistant"; content: string };
 type ActionDraft = { title: string; date: string | null; location: string | null; participantQuery: string; topic: string };
 type Participant = { id: string; email: string; role: string; department?: string | null };
+
+function inlineMarkdown(text: string): ReactNode[] {
+  const tokens = text.split(/(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g).filter(Boolean);
+  return tokens.map((token, index) => {
+    if (token.startsWith("**") && token.endsWith("**")) return <strong key={index} className="font-semibold text-white">{token.slice(2, -2)}</strong>;
+    if (token.startsWith("`") && token.endsWith("`")) return <code key={index} className="rounded bg-slate-950/70 px-1.5 py-0.5 text-[0.9em] text-cyan-200">{token.slice(1, -1)}</code>;
+    if (token.startsWith("*") && token.endsWith("*")) return <em key={index}>{token.slice(1, -1)}</em>;
+    return <span key={index}>{token}</span>;
+  });
+}
+
+function AssistantMessage({ content }: { content: string }) {
+  const sourceMatches = [...content.matchAll(/\[(meeting|event|policy|decision|minutes|meeting_transcript|meeting_ai_analysis):([^\]]+)\]/gi)];
+  const clean = content
+    .replace(/\[(meeting|event|policy|decision|minutes|meeting_transcript|meeting_ai_analysis):[^\]]+\]/gi, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  const lines = clean.split(/\r?\n/);
+  const blocks: ReactNode[] = [];
+  let bullets: { text: string; ordered: boolean }[] = [];
+
+  const flushList = () => {
+    if (!bullets.length) return;
+    const ordered = bullets[0].ordered;
+    const ListTag = ordered ? "ol" : "ul";
+    blocks.push(
+      <ListTag key={`list-${blocks.length}`} className={`${ordered ? "list-decimal" : "list-disc"} my-3 space-y-1.5 pl-5 text-slate-200`}>
+        {bullets.map((item, index) => <li key={index} className="pl-1 leading-6">{inlineMarkdown(item.text)}</li>)}
+      </ListTag>,
+    );
+    bullets = [];
+  };
+
+  lines.forEach((raw, index) => {
+    const line = raw.trim();
+    if (!line) { flushList(); return; }
+    if (/^[-*_]{3,}$/.test(line)) { flushList(); return; }
+
+    const bullet = line.match(/^[-*•]\s+(.+)$/);
+    const numbered = line.match(/^\d+[.)]\s+(.+)$/);
+    if (bullet) { bullets.push({ text: bullet[1], ordered: false }); return; }
+    if (numbered) { bullets.push({ text: numbered[1], ordered: true }); return; }
+
+    flushList();
+    const heading = line.match(/^#{1,3}\s+(.+)$/);
+    if (heading) {
+      blocks.push(<h3 key={index} className="mt-4 mb-2 text-base font-semibold text-white first:mt-0">{inlineMarkdown(heading[1])}</h3>);
+      return;
+    }
+
+    const label = line.match(/^\*\*(.+?)\*\*\s*:\s*(.*)$/);
+    if (label) {
+      blocks.push(<p key={index} className="my-2 leading-6"><strong className="font-semibold text-cyan-200">{label[1]}:</strong>{label[2] ? <> {inlineMarkdown(label[2])}</> : null}</p>);
+      return;
+    }
+
+    blocks.push(<p key={index} className="my-2 leading-6 text-slate-200">{inlineMarkdown(line)}</p>);
+  });
+  flushList();
+
+  return (
+    <div className="text-[15px] leading-6">
+      {blocks}
+      {sourceMatches.length > 0 && (
+        <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-700/70 pt-3">
+          <span className="text-xs font-medium uppercase tracking-wider text-slate-500">Sources</span>
+          {Array.from(new Set(sourceMatches.map(match => match[1].toLowerCase()))).map(type => (
+            <span key={type} className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900/80 px-2.5 py-1 text-xs text-slate-300">
+              <Check size={12} className="text-cyan-300" /> {type.replace(/_/g, " ")}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function NaturalGovernanceAssistant() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -63,13 +139,20 @@ export function NaturalGovernanceAssistant() {
   return <div className="mx-auto max-w-5xl space-y-6">
     <div><h1 className="text-3xl font-semibold">AI Governance Assistant</h1><p className="mt-2 text-slate-400">Talk naturally about meetings, decisions, action items, policies and events.</p></div>
     <div className="grid gap-6 lg:grid-cols-[1fr_330px]">
-      <section className="card p-5 min-h-[560px] flex flex-col">
+      <section className="card flex min-h-[560px] flex-col p-5">
         <div className="flex-1 space-y-4 overflow-auto pr-1">
           {!messages.length && <div className="py-16 text-center"><Sparkles className="mx-auto mb-4" size={34}/><h2 className="text-xl font-semibold">How can I help?</h2><p className="mx-auto mt-2 max-w-lg text-slate-400">Ask in normal language. You don't need exact commands or database terms.</p><div className="mt-6 flex flex-wrap justify-center gap-2">{suggestions.map(s => <button key={s} onClick={() => void ask(s)} className="btn btn-secondary text-sm">{s}</button>)}</div></div>}
-          {messages.map((m, i) => <div key={i} className={`flex gap-3 ${m.role === "user" ? "justify-end" : "justify-start"}`}><div className={`max-w-[85%] rounded-2xl px-4 py-3 whitespace-pre-wrap ${m.role === "user" ? "bg-indigo-600 text-white" : "bg-slate-800 text-slate-100"}`}>{m.role === "user" ? <UserRound className="mb-1 inline mr-2" size={15}/> : <Bot className="mb-1 inline mr-2" size={15}/>} {m.content}</div></div>)}
-          {busy && <div className="text-sm text-slate-400">Assistant is thinking...</div>}
+          {messages.map((m, i) => (
+            <div key={i} className={`flex gap-3 ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+              <div className={`max-w-[88%] rounded-2xl px-4 py-3 shadow-sm ${m.role === "user" ? "bg-indigo-600 text-white" : "border border-slate-700/80 bg-slate-800/90 text-slate-100"}`}>
+                <div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-wide opacity-70">{m.role === "user" ? <><UserRound size={14}/> You</> : <><Bot size={14}/> Governance AI</>}</div>
+                {m.role === "assistant" ? <AssistantMessage content={m.content}/> : <div className="whitespace-pre-wrap leading-6">{m.content}</div>}
+              </div>
+            </div>
+          ))}
+          {busy && <div className="flex items-center gap-2 text-sm text-slate-400"><Bot size={15}/> Assistant is thinking<span className="animate-pulse">...</span></div>}
         </div>
-        {error && <p className="mb-3 text-sm text-red-400" role="alert">{error}</p>}
+        {error && <p className="mb-3 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-sm text-red-300" role="alert">{error}</p>}
         <form onSubmit={submit} className="mt-4 flex gap-2"><input value={query} onChange={e => setQuery(e.target.value)} className="input flex-1" placeholder="Ask anything about your institution..." disabled={busy}/><button className="btn btn-primary" disabled={busy || !query.trim()}><Send size={16}/></button></form>
       </section>
       <aside className="space-y-4">

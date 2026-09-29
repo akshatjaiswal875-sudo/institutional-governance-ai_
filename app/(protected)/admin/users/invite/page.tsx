@@ -29,10 +29,10 @@ export default function InviteUserPage() {
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Unable to create user.");
-      setMessage(`Account created successfully. Account instructions were sent to ${email}. The user must change the temporary credential before accessing the dashboard.`);
+      setMessage(`Account created for ${email}. A temporary password and login instructions have been sent to the user's email. They must change the temporary password on first login.`);
       setEmail("");
       setDepartment("");
-      setTimeout(() => router.push("/admin/users"), 1600);
+      setTimeout(() => router.push("/admin/users"), 1800);
     } catch (value) {
       setError(value instanceof Error ? value.message : "Unable to create user.");
     } finally {
@@ -46,17 +46,18 @@ export default function InviteUserPage() {
         <div>
           <p className="text-sm font-semibold uppercase tracking-wider text-cyan-400">User management</p>
           <h1 className="mt-1 text-3xl font-semibold">Create new user</h1>
-          <p className="mt-2 text-slate-400">Create an account and send the new user their temporary sign-in instructions.</p>
+          <p className="mt-2 text-slate-400">Create the account from this panel. The user receives a temporary password by email and must replace it on first login.</p>
         </div>
         <Link href="/admin/users" className="btn btn-secondary">Back</Link>
       </div>
+
       <div className="card p-6">
         <form onSubmit={submit} className="space-y-5">
           <label className="block text-sm text-slate-300"><span className="mb-1 block">Email address</span><input className="input" type="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="user@institution.edu" required autoComplete="email" /></label>
           <label className="block text-sm text-slate-300"><span className="mb-1 block">Role</span><select className="select" value={role} onChange={event => setRole(event.target.value)}>{roles.map(item => <option key={item}>{item}</option>)}</select></label>
           <label className="block text-sm text-slate-300"><span className="mb-1 block">Department</span><input className="input" value={department} onChange={event => setDepartment(event.target.value)} placeholder="Administration / CSE / Faculty" /></label>
-          <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/5 p-4 text-sm text-slate-300"><strong className="text-cyan-300">How it works:</strong> a temporary sign-in credential is generated automatically, the account receives the selected role, and the user must create a new password before accessing the dashboard.</div>
-          <button className="btn btn-primary w-full" disabled={saving}>{saving ? "Creating account & sending..." : "Create user & send instructions"}</button>
+          <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/5 p-4 text-sm text-slate-300"><strong className="text-cyan-300">Automatic setup:</strong> the application creates the Supabase Auth account, creates the profile with the selected role (Member by default), generates a temporary password, and emails the credentials. The user is forced to create a new password before accessing the dashboard.</div>
+          <button className="btn btn-primary w-full" disabled={saving}>{saving ? "Creating account & sending email..." : "Create user & send credentials"}</button>
           {message && <p className="text-emerald-300" role="status">{message}</p>}
           {error && <p className="text-red-400" role="alert">{error}</p>}
         </form>

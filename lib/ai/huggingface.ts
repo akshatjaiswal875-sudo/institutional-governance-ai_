@@ -9,17 +9,19 @@ type HuggingFaceResult = {
 };
 
 const MAX_TRANSCRIPT_CHARS = 120_000;
-const DEFAULT_ANALYSIS_MODEL = "google/gemma-2-2b-it";
+// Hugging Face documents GPT OSS as available through Inference Providers;
+// :fastest lets the router choose an available provider automatically.
+const DEFAULT_ANALYSIS_MODEL = "openai/gpt-oss-120b:fastest";
 const FALLBACK_ANALYSIS_MODELS = [
-  "google/gemma-2-2b-it",
-  "Qwen/Qwen2.5-1.5B-Instruct",
-  "Qwen/Qwen2.5-7B-Instruct",
+  "openai/gpt-oss-120b:fastest",
+  "Qwen/Qwen2.5-7B-Instruct:fastest",
+  "Qwen/Qwen2.5-1.5B-Instruct:fastest",
 ];
 
 function resolveAnalysisModel(configured?: string) {
   const model = configured?.trim();
-  if (!model || model === "mistralai/Mistral-7B-Instruct-v0.2") return DEFAULT_ANALYSIS_MODEL;
-  return model;
+  if (!model || model === "mistralai/Mistral-7B-Instruct-v0.2" || model === "google/gemma-2-2b-it") return DEFAULT_ANALYSIS_MODEL;
+  return model.includes(":") ? model : `${model}:fastest`;
 }
 
 function formatProviderError(value: unknown): string {
@@ -38,13 +40,7 @@ function formatProviderError(value: unknown): string {
 
 function isUnsupportedModelError(status: number, detail: string) {
   const text = detail.toLowerCase();
-  return status === 400 && (
-    text.includes("not supported by any provider") ||
-    text.includes("no provider") ||
-    text.includes("provider you have enabled") ||
-    text.includes("model is not available") ||
-    text.includes("not deployed")
-  );
+  return status === 400 && (text.includes("not supported by any provider") || text.includes("no provider") || text.includes("provider you have enabled") || text.includes("model is not available") || text.includes("not deployed"));
 }
 
 async function callHuggingFace(prompt: string, model: string) {

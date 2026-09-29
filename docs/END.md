@@ -1,0 +1,1 @@
+This file marks the end of the first automated hardening pass.

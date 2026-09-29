@@ -1,0 +1,1 @@
+The implementation is intentionally split: database hardening is applied to the connected Supabase production project, while application code is isolated on this Git branch for review before production deployment.

@@ -17,6 +17,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
     ]);
     if (meetingError || participantError || agendaError) throw meetingError ?? participantError ?? agendaError;
     if (!meeting) return NextResponse.json({ error: "Meeting not found." }, { status: 404 });
+
     const admin = createAdminClient();
     const { data: participantUser, error: participantUserError } = participant
       ? await admin.from("users").select("id,email,role,department").eq("id", participant.user_id).maybeSingle()
@@ -26,10 +27,12 @@ export async function POST(request: Request, { params }: { params: { id: string 
 
     const { data: organizer, error: organizerError } = await admin.from("users").select("email").eq("id", meeting.created_by).maybeSingle();
     if (organizerError) throw organizerError;
+
     await sendMeetingInvitation({
       recipientEmail: participantUser.email,
       recipientName: participantUser.email,
       meetingTitle: meeting.title,
+      meetingId: meeting.id,
       date: new Intl.DateTimeFormat("en-IN", { dateStyle: "full", timeStyle: "short" }).format(new Date(meeting.date)),
       organizer: organizer?.email ?? "Institutional Governance",
       location: meeting.location,

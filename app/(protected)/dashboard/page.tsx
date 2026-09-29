@@ -1,2 +1,5 @@
-import { DashboardView } from "@/components/phase1-live";
-export default function Dashboard() { return <DashboardView />; }
+import { FancyDashboard } from "@/components/fancy-dashboard";
+
+export default function Dashboard() {
+  return <FancyDashboard />;
+}

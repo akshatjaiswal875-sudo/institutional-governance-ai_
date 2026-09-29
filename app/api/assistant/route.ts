@@ -14,6 +14,11 @@ type SearchRow = {
   similarity: number;
 };
 
+type AssistantSource = Record<string, unknown> & {
+  parent_type: string;
+  parent_id: string;
+};
+
 function unique<T>(values: T[]) {
   return Array.from(new Set(values));
 }
@@ -41,8 +46,6 @@ function extractSearchTerms(message: string) {
 }
 
 function cleanIlikeTerm(term: string) {
-  // Escape ILIKE wildcards so identifiers such as Trail_02 are searched
-  // literally rather than treating '_' as a one-character wildcard.
   return term.replace(/[\\%_]/g, (value) => `\\${value}`);
 }
 
@@ -53,11 +56,8 @@ export async function POST(req: NextRequest) {
 
     const rows: SearchRow[] = [];
     const sourceKeys = new Set<string>();
+    const sources: AssistantSource[] = [];
 
-    // The RPC is an optimization, not a hard dependency. A stale/missing
-    // migration, transient Postgres error, or permission problem here should
-    // never make the whole assistant fail because we have direct RLS-protected
-    // retrieval paths below.
     try {
       const { data, error } = await supabase.rpc('keyword_search', {
         query_text: body.message,
@@ -67,6 +67,7 @@ export async function POST(req: NextRequest) {
         for (const row of ((data ?? []) as SearchRow[])) {
           rows.push(row);
           sourceKeys.add(`${row.parent_type}:${row.parent_id}`);
+          sources.push({ ...row.metadata, parent_type: row.parent_type, parent_id: row.parent_id });
         }
       } else {
         console.warn('[assistant] keyword_search unavailable; using direct retrieval:', error.message);
@@ -80,11 +81,6 @@ export async function POST(req: NextRequest) {
       contextParts.push(`[${row.parent_type}:${row.parent_id}] ${row.chunk_content}`);
     }
 
-    // Natural-language questions often contain filler words, e.g.
-    // "tell me about Trail_02". Search the visible meeting title directly as
-    // a second, RLS-protected retrieval path. This also handles identifiers
-    // containing underscores which PostgreSQL full-text search may tokenize
-    // unexpectedly.
     const searchTerms = extractSearchTerms(body.message);
     let directMeetings: any[] = [];
 
@@ -110,12 +106,11 @@ export async function POST(req: NextRequest) {
         if (!sourceKeys.has(key)) {
           sourceKeys.add(key);
           contextParts.push(`[${key}:title-match] ${JSON.stringify(meeting)}`);
+          sources.push({ parent_type: 'meeting', parent_id: meeting.id, title: meeting.title, retrieval: 'title-match' });
         }
       }
     }
 
-    // Helpful fallback for questions such as "latest meeting" when there is
-    // no useful title term to search for.
     if (!directMeetings.length && /\b(latest|recent|last)\b/i.test(body.message)) {
       const { data, error } = await supabase
         .from('meetings')
@@ -129,14 +124,11 @@ export async function POST(req: NextRequest) {
         if (!sourceKeys.has(key)) {
           sourceKeys.add(key);
           contextParts.push(`[${key}:recent] ${JSON.stringify(meeting)}`);
+          sources.push({ parent_type: 'meeting', parent_id: meeting.id, title: meeting.title, retrieval: 'recent' });
         }
       }
     }
 
-    // A meeting title match is only a pointer. Expand it into the actual
-    // meeting intelligence so questions such as "summarize Trail_02",
-    // "what were the decisions?" and "who has an action item?" have enough
-    // context to answer correctly.
     const meetingIds = unique(
       directMeetings
         .map((meeting) => meeting.id)
@@ -145,12 +137,13 @@ export async function POST(req: NextRequest) {
     );
 
     if (meetingIds.length) {
-      const [meetings, transcripts, analyses, decisions, minutes] = await Promise.all([
+      const [meetings, transcripts, analyses, decisions, minutes, actionItems] = await Promise.all([
         supabase.from('meetings').select('id,title,date,location,type,status,created_by,assigned_approver_id').in('id', meetingIds),
         supabase.from('meeting_transcripts').select('id,meeting_id,recording_id,transcript,status,created_at').in('meeting_id', meetingIds).order('created_at', { ascending: false }),
         supabase.from('meeting_ai_analysis').select('id,meeting_id,transcript_id,summary,key_points,suggested_minutes,extracted_decisions,extracted_action_items,model_name,status,created_at').in('meeting_id', meetingIds).order('created_at', { ascending: false }),
         supabase.from('decisions').select('id,meeting_id,minute_id,decision_text,action_item,assignee_id,due_date,status').in('meeting_id', meetingIds),
         supabase.from('minutes').select('id,meeting_id,raw_transcript,summary,version,is_approved,created_at,updated_at').in('meeting_id', meetingIds).order('created_at', { ascending: false }),
+        supabase.from('action_items').select('id,meeting_id,decision_id,task,assignee_id,due_date,priority,status,created_by,created_at,updated_at').in('meeting_id', meetingIds),
       ]);
 
       if (meetings.error) throw meetings.error;
@@ -158,6 +151,7 @@ export async function POST(req: NextRequest) {
       if (analyses.error) throw analyses.error;
       if (decisions.error) throw decisions.error;
       if (minutes.error) throw minutes.error;
+      if (actionItems.error) throw actionItems.error;
 
       for (const meeting of meetings.data ?? []) {
         const key = `meeting:${meeting.id}`;
@@ -176,14 +170,16 @@ export async function POST(req: NextRequest) {
         contextParts.push(`[decision:${decision.id}] meeting_id=${decision.meeting_id} decision=${decision.decision_text} action_item=${decision.action_item ?? ''} assignee_id=${decision.assignee_id ?? ''} due_date=${decision.due_date ?? ''} status=${decision.status}`);
       }
 
+      for (const item of actionItems.data ?? []) {
+        contextParts.push(`[action_item:${item.id}] meeting_id=${item.meeting_id} decision_id=${item.decision_id ?? ''} task=${item.task} assignee_id=${item.assignee_id ?? ''} due_date=${item.due_date ?? ''} priority=${item.priority} status=${item.status}`);
+      }
+
       for (const minute of minutes.data ?? []) {
         addSection(contextParts, `[minutes:${minute.id}] meeting_id=${minute.meeting_id}`, minute.summary);
         addSection(contextParts, `[minutes:${minute.id}:raw]`, minute.raw_transcript);
       }
     }
 
-    // Events and policies are not tied to a meeting, so include them when
-    // keyword search already found them. RLS remains the permission boundary.
     const policyIds = unique(rows.filter((row) => row.parent_type === 'policy').map((row) => row.parent_id));
     if (policyIds.length) {
       const { data: policies, error: policyError } = await supabase
@@ -212,7 +208,7 @@ export async function POST(req: NextRequest) {
 
     return ok({
       answer: answer || 'No relevant institutional records were found.',
-      sources: rows.map((x) => ({ ...x.metadata, parent_type: x.parent_type, parent_id: x.parent_id })),
+      sources,
     });
   } catch (e) {
     console.error('[assistant]', e);

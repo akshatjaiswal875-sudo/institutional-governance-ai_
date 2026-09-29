@@ -56,30 +56,10 @@ function parseMeetingRequest(message: string) {
   };
 }
 
-async function findParticipants(supabase: Awaited<ReturnType<typeof import("@/lib/supabase/server").createClient>>, query: string) {
-  const q = query.trim();
-  if (!q) return [];
-  const pattern = `%${q}%`;
-
-  const [emailResult, roleResult, departmentResult] = await Promise.all([
-    supabase.from("users").select("id,email,role,department").ilike("email", pattern).limit(30),
-    supabase.from("users").select("id,email,role,department").ilike("role", pattern).limit(30),
-    supabase.from("users").select("id,email,role,department").ilike("department", pattern).limit(30),
-  ]);
-
-  const error = emailResult.error ?? roleResult.error ?? departmentResult.error;
-  if (error) throw error;
-
-  const byId = new Map<string, any>();
-  for (const row of [...(emailResult.data ?? []), ...(roleResult.data ?? []), ...(departmentResult.data ?? [])]) {
-    byId.set(row.id, row);
-  }
-  return [...byId.values()].slice(0, 30);
-}
-
 export async function POST(request: Request) {
   try {
     const { supabase, user, profile } = await requireUser(["Super Admin"]);
+    const admin = createAdminClient();
     const body = await request.json();
     const action = clean(body?.action);
 
@@ -94,7 +74,18 @@ export async function POST(request: Request) {
 
       let participants: any[] = [];
       if (draft.participantQuery) {
-        participants = await findParticipants(supabase, draft.participantQuery);
+        const q = draft.participantQuery;
+        const pattern = `%${q.replace(/[\\%_]/g, (value) => `\\${value}`)}%`;
+        const [emailResult, roleResult, departmentResult] = await Promise.all([
+          admin.from("users").select("id,email,role,department").ilike("email", pattern).limit(30),
+          admin.from("users").select("id,email,role,department").ilike("role", pattern).limit(30),
+          admin.from("users").select("id,email,role,department").ilike("department", pattern).limit(30),
+        ]);
+        const error = emailResult.error ?? roleResult.error ?? departmentResult.error;
+        if (error) throw error;
+        const byId = new Map<string, any>();
+        for (const row of [...(emailResult.data ?? []), ...(roleResult.data ?? []), ...(departmentResult.data ?? [])]) byId.set(row.id, row);
+        participants = [...byId.values()].slice(0, 30);
       }
       if (draft.participantQuery && !participants.length) needs.push("a valid participant selection");
 
@@ -113,7 +104,10 @@ export async function POST(request: Request) {
       if (!title || !date) return NextResponse.json({ error: "Meeting title and date/time are required." }, { status: 400 });
       if (!participantIds.length) return NextResponse.json({ error: "Select at least one participant." }, { status: 400 });
 
-      const { data: validUsers, error: usersError } = await supabase
+      // This endpoint is already restricted to Super Admin. Use the service-role
+      // client for participant/profile reads because public.users intentionally
+      // allows normal users to read only their own profile.
+      const { data: validUsers, error: usersError } = await admin
         .from("users")
         .select("id,email,role,department")
         .in("id", participantIds);
@@ -122,19 +116,12 @@ export async function POST(request: Request) {
 
       const { data: meeting, error: meetingError } = await supabase
         .from("meetings")
-        .insert({
-          title,
-          date,
-          location,
-          type: draft?.type === "online" ? "online" : "offline",
-          created_by: user.id,
-          status: "Draft",
-        })
+        .insert({ title, date, location, type: draft?.type === "online" ? "online" : "offline", created_by: user.id, status: "Draft" })
         .select("id,title,date,location,created_by,status")
         .single();
       if (meetingError) throw meetingError;
 
-      const { data: insertedParticipants, error: participantError } = await supabase
+      const { data: insertedParticipants, error: participantError } = await admin
         .from("participants")
         .insert(validUsers.map((u) => ({ meeting_id: meeting.id, user_id: u.id, attendance_status: "Invited" })))
         .select("id,user_id");
@@ -147,13 +134,8 @@ export async function POST(request: Request) {
         .order("sort_order");
       if (agendaError) throw agendaError;
 
-      await recordAudit(supabase, profile.id, "CREATE_MEETING", "meetings", meeting.id, {
-        title,
-        status: "Draft",
-        source: "AI Assistant",
-      });
+      await recordAudit(supabase, profile.id, "CREATE_MEETING", "meetings", meeting.id, { title, status: "Draft", source: "AI Assistant" });
 
-      const admin = createAdminClient();
       const { data: organizer } = await admin.from("users").select("email").eq("id", user.id).maybeSingle();
       const invitationErrors: string[] = [];
 
@@ -182,15 +164,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unsupported meeting action." }, { status: 400 });
   } catch (error) {
     console.error("[assistant/meeting-action]", error);
-    if (error instanceof Error && error.message === "UNAUTHORIZED") {
-      return NextResponse.json({ error: "Authentication required." }, { status: 401 });
-    }
-    if (error instanceof Error && error.message === "FORBIDDEN") {
-      return NextResponse.json({ error: "Only Super Admin can create meetings through the AI Assistant." }, { status: 403 });
-    }
-    if (error instanceof Error && error.message === "PROFILE_NOT_FOUND") {
-      return NextResponse.json({ error: "Your login is missing a public.users profile. Ask a Super Admin to create/link your profile." }, { status: 403 });
-    }
+    if (error instanceof Error && error.message === "UNAUTHORIZED") return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    if (error instanceof Error && error.message === "FORBIDDEN") return NextResponse.json({ error: "Only Super Admin can create meetings through the AI Assistant." }, { status: 403 });
+    if (error instanceof Error && error.message === "PROFILE_NOT_FOUND") return NextResponse.json({ error: "Your login is missing a public.users profile. Ask a Super Admin to create/link your profile." }, { status: 403 });
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to process meeting action." }, { status: 500 });
   }
 }

@@ -11,15 +11,6 @@ export async function GET(req: Request) {
   const tokenHash = url.searchParams.get("token_hash");
   const type = url.searchParams.get("type");
 
-  // Invitation users must set their password before entering the dashboard.
-  // Recovery users must choose a new password as well.
-  const fallback = type === "invite"
-    ? "/set-password"
-    : type === "recovery"
-      ? "/reset-password"
-      : "/dashboard";
-  const next = safeNext(url.searchParams.get("next"), fallback);
-
   if (!code && !tokenHash) {
     return NextResponse.redirect(new URL("/login?error=Missing authentication callback code.", url.origin));
   }
@@ -42,7 +33,15 @@ export async function GET(req: Request) {
       if (error) throw error;
     }
 
-    return NextResponse.redirect(new URL(next, url.origin));
+    // Never allow an invitation/recovery link to bypass password setup,
+    // even if Supabase supplies a dashboard redirect in the URL.
+    const destination = type === "invite"
+      ? "/set-password"
+      : type === "recovery"
+        ? "/reset-password"
+        : safeNext(url.searchParams.get("next"), "/dashboard");
+
+    return NextResponse.redirect(new URL(destination, url.origin));
   } catch (error) {
     const message = error instanceof Error ? error.message : "Authentication callback failed.";
     return NextResponse.redirect(new URL(`/login?error=${encodeURIComponent(message)}`, url.origin));

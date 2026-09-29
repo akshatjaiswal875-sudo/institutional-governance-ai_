@@ -1,5 +1,5 @@
 "use client";
-import { FormEvent, Suspense, useState } from "react";
+import { FormEvent, Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -9,16 +9,23 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const searchParams = useSearchParams();
   const [error, setError] = useState(searchParams.get("error") ?? "");
+  const [message, setMessage] = useState(searchParams.get("password_created") === "1" ? "Password created successfully. Sign in with your new password." : "");
   const router = useRouter();
+
+  useEffect(() => {
+    const value = searchParams.get("error");
+    if (value) setError(value);
+    if (searchParams.get("password_created") === "1") setMessage("Password created successfully. Sign in with your new password.");
+  }, [searchParams]);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     setError("");
+    setMessage("");
 
     try {
       const s = createClient();
       const { error } = await s.auth.signInWithPassword({ email, password });
-
       if (error) {
         setError(error.message);
         return;
@@ -31,13 +38,9 @@ function LoginForm() {
       router.replace(destination);
       router.refresh();
     } catch (err) {
-      const message =
-        err instanceof Error && err.message.includes("fetch")
-          ? "Unable to reach the Supabase authentication service. Check your Supabase URL and network connectivity."
-          : err instanceof Error
-            ? err.message
-            : "Authentication failed.";
-
+      const message = err instanceof Error && err.message.includes("fetch")
+        ? "Unable to reach the Supabase authentication service. Check your Supabase URL and network connectivity."
+        : err instanceof Error ? err.message : "Authentication failed.";
       setError(message);
     }
   }
@@ -53,16 +56,13 @@ function LoginForm() {
           <Link href="/forgot-password" className="text-sm text-cyan-400 hover:underline">Forgot password?</Link>
         </div>
         <button className="btn btn-primary w-full">Sign in</button>
-        {error && <p className="text-red-400">{error}</p>}
+        {message && <p className="text-emerald-400" role="status">{message}</p>}
+        {error && <p className="text-red-400" role="alert">{error}</p>}
       </form>
     </div>
   );
 }
 
 export default function Login() {
-  return (
-    <Suspense fallback={<div className="mx-auto mt-20 max-w-md card p-8">Loading...</div>}>
-      <LoginForm />
-    </Suspense>
-  );
+  return <Suspense fallback={<div className="mx-auto mt-20 max-w-md card p-8">Loading...</div>}><LoginForm /></Suspense>;
 }

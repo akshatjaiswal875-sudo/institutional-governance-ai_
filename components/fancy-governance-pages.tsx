@@ -1,0 +1,56 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { CalendarDays, CheckCircle2, Clock3, FileText, MapPin, Plus, Search, ShieldCheck, Sparkles, Users, ArrowUpRight } from "lucide-react";
+
+async function loadRows(path: string) {
+  const response = await fetch(path, { cache: "no-store" });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body?.error || "Unable to load data");
+  return body?.data ?? [];
+}
+
+const demoEvents = [
+  { id: "demo-1", title: "Faculty Senate – September Session", start_time: "2026-09-30T10:00:00+05:30", end_time: "2026-09-30T12:00:00+05:30", location: "Senate Hall", description: "Monthly governance session covering academic quality, faculty matters and institutional priorities.", status: "Upcoming" },
+  { id: "demo-2", title: "Academic Calendar Review", start_time: "2026-10-02T14:30:00+05:30", end_time: "2026-10-02T16:00:00+05:30", location: "Board Room", description: "Review proposed academic calendar changes, examination windows and semester milestones.", status: "Upcoming" },
+  { id: "demo-3", title: "Research Governance Workshop", start_time: "2026-10-07T11:00:00+05:30", end_time: "2026-10-07T13:00:00+05:30", location: "Innovation Centre", description: "Workshop on research ethics, grant compliance, approvals and responsible data handling.", status: "Upcoming" },
+];
+
+const demoPolicies = [
+  { id: "demo-p1", title: "Research Ethics & Integrity", content: "Defines institutional expectations for ethical research, approvals, responsible conduct, reporting and accountability.", version: 3, status: "Approved", effective_date: "2026-10-01" },
+  { id: "demo-p2", title: "Records Retention & Governance", content: "Establishes retention, classification, access and disposal standards for institutional records and meeting evidence.", version: 2, status: "Under Review", effective_date: "2026-11-01" },
+  { id: "demo-p3", title: "Meeting Recording & Consent", content: "Defines consent, access control, storage, retention and responsible use of institutional meeting recordings.", version: 1, status: "Approved", effective_date: "2026-10-15" },
+  { id: "demo-p4", title: "AI-Assisted Governance Standard", content: "Sets review, transparency, human-oversight and accountability requirements for AI-generated summaries and recommendations.", version: 1, status: "Draft", effective_date: "2026-12-01" },
+];
+
+function Status({ value }: { value: string }) {
+  const cls = value === "Approved" || value === "Upcoming" ? "text-emerald-300 bg-emerald-400/10 border-emerald-400/20" : value === "Under Review" ? "text-amber-300 bg-amber-400/10 border-amber-400/20" : "text-cyan-300 bg-cyan-400/10 border-cyan-400/20";
+  return <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${cls}`}>{value}</span>;
+}
+
+export function FancyEvents() {
+  const [events, setEvents] = useState<any[]>([]);
+  const [query, setQuery] = useState("");
+  const [error, setError] = useState("");
+  useEffect(() => { loadRows("/api/events").then(setEvents).catch(e => setError(e.message)); }, []);
+  const rows = useMemo(() => (events.length ? events : demoEvents).filter(e => `${e.title} ${e.location ?? ""} ${e.description ?? ""}`.toLowerCase().includes(query.toLowerCase())), [events, query]);
+  return <main className="space-y-6 pb-10">
+    <section className="relative overflow-hidden rounded-[30px] border border-slate-800 bg-gradient-to-br from-slate-900 via-slate-950 to-cyan-950/30 p-6 sm:p-8"><div className="absolute right-0 top-0 h-full w-1/2 bg-[radial-gradient(circle_at_top_right,rgba(34,211,238,.14),transparent_60%)]" /><div className="relative flex flex-col gap-5 md:flex-row md:items-end md:justify-between"><div><div className="mb-3 inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[.15em] text-cyan-300"><Sparkles size={13}/> Institutional calendar</div><h1 className="text-3xl font-bold text-white sm:text-4xl">Events & governance moments</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">Plan hearings, councils, workshops and institutional milestones from one elegant workspace.</p></div><Link href="/events/new" className="btn btn-primary rounded-xl"><Plus size={16}/> New event</Link></div><div className="relative mt-6 flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/70 px-4 py-3"><Search size={17} className="text-slate-500"/><input className="w-full bg-transparent text-sm text-white outline-none placeholder:text-slate-600" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search events, locations or topics..."/></div></section>
+    {error && <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-3 text-sm text-amber-300">Live event data is temporarily unavailable. Showing demo records.</div>}
+    <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{rows.map((e:any)=><Link href={e.id.startsWith("demo-")?"#":`/events/${e.id}`} key={e.id} className="group rounded-2xl border border-slate-800 bg-slate-900/70 p-5 transition hover:-translate-y-1 hover:border-cyan-400/30 hover:shadow-xl hover:shadow-cyan-950/20"><div className="flex items-start justify-between gap-3"><div className="flex h-11 w-11 items-center justify-center rounded-xl bg-cyan-400/10 text-cyan-300"><CalendarDays size={20}/></div><Status value={e.status}/></div><p className="mt-5 text-xs font-semibold uppercase tracking-wider text-cyan-400">{new Date(e.start_time).toLocaleDateString("en-IN",{weekday:"short",day:"2-digit",month:"short"})}</p><h2 className="mt-1 text-lg font-semibold text-white group-hover:text-cyan-100">{e.title}</h2><p className="mt-2 min-h-12 text-sm leading-6 text-slate-400">{e.description}</p><div className="mt-5 space-y-2 border-t border-white/5 pt-4 text-xs text-slate-500"><span className="flex items-center gap-2"><Clock3 size={13}/> {new Date(e.start_time).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"})} – {new Date(e.end_time).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"})}</span><span className="flex items-center gap-2"><MapPin size={13}/> {e.location || "Online"}</span></div></Link>)}</section>
+    <div className="flex items-center justify-center gap-2 text-xs text-slate-600"><span className="h-2 w-2 rounded-full bg-cyan-400"/> Demo records are illustrative; real records appear automatically when available.</div>
+  </main>;
+}
+
+export function FancyPolicies() {
+  const [policies, setPolicies] = useState<any[]>([]); const [query,setQuery]=useState(""); const [error,setError]=useState("");
+  useEffect(()=>{loadRows("/api/policies").then(setPolicies).catch(e=>setError(e.message));},[]);
+  const rows=useMemo(()=> (policies.length?policies:demoPolicies).filter(p=>`${p.title} ${p.content}`.toLowerCase().includes(query.toLowerCase())),[policies,query]);
+  const approved=rows.filter(p=>p.status==="Approved").length;
+  return <main className="space-y-6 pb-10">
+    <section className="relative overflow-hidden rounded-[30px] border border-slate-800 bg-gradient-to-br from-slate-900 via-slate-950 to-violet-950/30 p-6 sm:p-8"><div className="absolute right-0 top-0 h-full w-1/2 bg-[radial-gradient(circle_at_top_right,rgba(167,139,250,.15),transparent_60%)]"/><div className="relative flex flex-col gap-5 md:flex-row md:items-end md:justify-between"><div><div className="mb-3 inline-flex items-center gap-2 rounded-full border border-violet-400/20 bg-violet-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[.15em] text-violet-300"><ShieldCheck size={13}/> Policy control center</div><h1 className="text-3xl font-bold text-white sm:text-4xl">Policies & institutional standards</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">Keep governance rules discoverable, versioned and ready for review.</p></div><Link href="/policies/new" className="btn btn-primary rounded-xl"><Plus size={16}/> New policy</Link></div><div className="relative mt-6 grid gap-3 sm:grid-cols-3"><div className="rounded-xl border border-white/5 bg-white/[.035] p-4"><p className="text-2xl font-bold text-white">{rows.length}</p><p className="text-xs text-slate-500">Visible policies</p></div><div className="rounded-xl border border-white/5 bg-white/[.035] p-4"><p className="text-2xl font-bold text-emerald-300">{approved}</p><p className="text-xs text-slate-500">Approved</p></div><div className="rounded-xl border border-white/5 bg-white/[.035] p-4"><p className="text-2xl font-bold text-violet-300">{new Set(rows.map(p=>p.version)).size}</p><p className="text-xs text-slate-500">Versions tracked</p></div></div><div className="relative mt-4 flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/70 px-4 py-3"><Search size={17} className="text-slate-500"/><input className="w-full bg-transparent text-sm text-white outline-none placeholder:text-slate-600" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search policies..."/></div></section>
+    {error && <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-3 text-sm text-amber-300">Live policy data is temporarily unavailable. Showing demo records.</div>}
+    <section className="grid gap-4 md:grid-cols-2">{rows.map((p:any)=><article key={p.id} className="group rounded-2xl border border-slate-800 bg-slate-900/70 p-5 transition hover:-translate-y-1 hover:border-violet-400/30 hover:shadow-xl hover:shadow-violet-950/20"><div className="flex items-start justify-between gap-4"><div className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-400/10 text-violet-300"><FileText size={19}/></div><Status value={p.status}/></div><h2 className="mt-5 text-lg font-semibold text-white">{p.title}</h2><p className="mt-2 min-h-12 text-sm leading-6 text-slate-400">{p.content}</p><div className="mt-5 grid grid-cols-2 gap-3 border-t border-white/5 pt-4 text-xs"><div><span className="text-slate-600">Version</span><p className="mt-1 font-semibold text-slate-300">v{p.version}</p></div><div><span className="text-slate-600">Effective</span><p className="mt-1 font-semibold text-slate-300">{p.effective_date?new Date(p.effective_date).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}):"Not set"}</p></div></div><div className="mt-4 flex items-center gap-2 text-xs text-slate-600"><CheckCircle2 size={13}/> Governance controlled document <ArrowUpRight size={13} className="ml-auto"/></div></article>)}</section>
+  </main>;
+}

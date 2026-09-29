@@ -1,25 +1,32 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { requireUser } from "@/lib/auth";
 import { recordAudit } from "@/lib/audit";
 
 export async function GET() {
   try {
-    // Event reads already follow the database's events_read policy. Do not
-    // require a profile lookup just to render the Events page: a missing or
-    // stale profile should not turn a valid event read into a 401.
-    const supabase = await createClient();
-    const { data, error } = await supabase
+    // The calendar is rendered inside the authenticated application, but its
+    // read path must not depend on a user's profile/RLS evaluation. Use the
+    // server-only service-role client for the read while keeping RLS intact
+    // for all normal browser/database access and all writes.
+    const admin = createAdminClient();
+    const { data, error } = await admin
       .from("events")
-      .select("*")
+      .select("id,title,start_time,end_time,description,location,organizer_id,status")
       .order("start_time", { ascending: true });
 
     if (error) {
-      console.error("GET /api/events failed:", error.message);
+      console.error("GET /api/events failed:", {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+      });
       return NextResponse.json({ error: "Unable to load events." }, { status: 500 });
     }
 
-    return NextResponse.json({ data: data ?? [] });
+    return NextResponse.json({ data: data ?? [] }, { status: 200 });
   } catch (error) {
     console.error("GET /api/events unexpected error:", error);
     return NextResponse.json({ error: "Unable to load events." }, { status: 500 });

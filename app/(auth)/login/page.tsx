@@ -1,5 +1,6 @@
 "use client";
 import { FormEvent, Suspense, useState } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -44,26 +45,13 @@ function LoginForm() {
   return (
     <div className="mx-auto mt-20 max-w-md card p-8">
       <h1 className="mb-2 text-2xl font-bold">Institutional Governance AI</h1>
-      <p className="mb-6 text-slate-400">
-        Sign in with your Supabase Auth account.
-      </p>
+      <p className="mb-6 text-slate-400">Sign in with your Supabase Auth account.</p>
       <form onSubmit={submit} className="space-y-4">
-        <input
-          className="input"
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-        />
-        <input
-          className="input"
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
+        <input className="input" type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+        <input className="input" type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+        <div className="-mt-2 flex justify-end">
+          <Link href="/forgot-password" className="text-sm text-cyan-400 hover:underline">Forgot password?</Link>
+        </div>
         <button className="btn btn-primary w-full">Sign in</button>
         {error && <p className="text-red-400">{error}</p>}
       </form>

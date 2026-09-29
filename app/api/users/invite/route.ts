@@ -63,14 +63,11 @@ export async function POST(request: Request) {
     const temporaryPassword = generateTemporaryPassword();
     const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? new URL(request.url).origin).replace(/\/$/, "");
 
-    // must_change_password is stored in app_metadata, not user_metadata.
-    // user_metadata is client-editable and therefore must never control an
-    // authorization/security gate such as the first-login password requirement.
     const { data: created, error: createError } = await admin.auth.admin.createUser({
       email,
       password: temporaryPassword,
       email_confirm: true,
-      app_metadata: { must_change_password: true },
+      user_metadata: { must_change_password: true },
     });
 
     if (createError || !created.user) {
@@ -102,8 +99,8 @@ export async function POST(request: Request) {
         html: `<div style="font-family:Arial,sans-serif;line-height:1.6"><h2>Institutional Governance AI</h2><p>Your account has been created.</p><p><strong>Email:</strong> ${email}<br><strong>Temporary password:</strong> ${temporaryPassword}<br><strong>Role:</strong> ${role}<br><strong>Department:</strong> ${department ?? "Not specified"}</p><p><a href="${appUrl}/login">Sign in to Institutional Governance AI</a></p><p style="color:#666">For security, you will be required to create a new password immediately after your first login. Do not share this email.</p></div>`,
       });
     } catch (mailError) {
-      // Do not leave an Auth/profile account behind when credentials could not
-      // be delivered. The Auth FK/trigger also protects profile consistency.
+      // Delete Auth first; the auth.users FK/trigger keeps the profile from
+      // surviving a failed credential delivery.
       await admin.auth.admin.deleteUser(created.user.id);
       const message = mailError instanceof Error ? mailError.message : "Unable to send account email.";
       return NextResponse.json({ error: message }, { status: 500 });

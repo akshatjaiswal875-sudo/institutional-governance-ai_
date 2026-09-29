@@ -12,6 +12,15 @@ export async function GET(req: Request) {
   const type = url.searchParams.get("type");
   const requestedNext = safeNext(url.searchParams.get("next"), "");
 
+  // Supabase invite links can use the implicit flow and return the session in
+  // the URL hash. Hash fragments are not sent to the server, so there is no
+  // code/token_hash to exchange here. If the invite explicitly targets
+  // password setup, send the browser to /set-password so its Supabase client
+  // can consume the hash and establish the session.
+  if (!code && !tokenHash && (type === "invite" || requestedNext === "/set-password")) {
+    return NextResponse.redirect(new URL("/set-password", url.origin));
+  }
+
   if (!code && !tokenHash) {
     return NextResponse.redirect(new URL("/login?error=Missing authentication callback code.", url.origin));
   }
@@ -34,14 +43,11 @@ export async function GET(req: Request) {
       if (error) throw error;
     }
 
-    // Invitations must always go through password setup. For PKCE invitation
-    // links Supabase may omit `type`, so the explicit next parameter is also
-    // honored. If a code callback has no next parameter, default to setup.
     const destination = type === "invite"
       ? "/set-password"
       : type === "recovery"
         ? "/reset-password"
-        : requestedNext || (code ? "/set-password" : "/dashboard");
+        : requestedNext || "/dashboard";
 
     return NextResponse.redirect(new URL(destination, url.origin));
   } catch (error) {

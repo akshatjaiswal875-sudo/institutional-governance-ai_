@@ -1,2 +1,2 @@
-import { PoliciesView } from "@/components/phase1-live";
-export default function Policies() { return <PoliciesView />; }
+import { FancyPolicies } from "@/components/fancy-governance-pages";
+export default function Policies() { return <FancyPolicies />; }

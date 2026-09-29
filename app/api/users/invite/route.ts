@@ -17,7 +17,9 @@ function getMailer() {
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASS;
   const port = Number(process.env.SMTP_PORT ?? 587);
-  if (!host || !user || !pass) throw new Error("Email service is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER and SMTP_PASS in Vercel.");
+  if (!host || !user || !pass) {
+    throw new Error("Email service is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER and SMTP_PASS in Vercel.");
+  }
 
   return nodemailer.createTransport({
     host,
@@ -42,25 +44,33 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid role." }, { status: 400 });
     }
 
-    // All writes/reads involving the users profile table are performed with
-    // the service-role client. The normal browser session is intentionally
-    // restricted by RLS and must not be used for this admin-only operation.
+    // This endpoint is privileged: all public.users reads/writes and Auth
+    // administration are performed with the server-only service-role client.
     const admin = createAdminClient();
-    const { data: existing } = await admin
+    const { data: existing, error: duplicateError } = await admin
       .from("users")
       .select("id")
       .eq("email", email)
       .maybeSingle();
-    if (existing) return NextResponse.json({ error: "A user with this email already exists." }, { status: 409 });
+
+    if (duplicateError) {
+      return NextResponse.json({ error: duplicateError.message }, { status: 500 });
+    }
+    if (existing) {
+      return NextResponse.json({ error: "A user with this email already exists." }, { status: 409 });
+    }
 
     const temporaryPassword = generateTemporaryPassword();
     const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? new URL(request.url).origin).replace(/\/$/, "");
 
+    // must_change_password is stored in app_metadata, not user_metadata.
+    // user_metadata is client-editable and therefore must never control an
+    // authorization/security gate such as the first-login password requirement.
     const { data: created, error: createError } = await admin.auth.admin.createUser({
       email,
       password: temporaryPassword,
       email_confirm: true,
-      user_metadata: { must_change_password: true },
+      app_metadata: { must_change_password: true },
     });
 
     if (createError || !created.user) {
@@ -69,7 +79,10 @@ export async function POST(request: Request) {
 
     const { data: user, error: profileError } = await admin
       .from("users")
-      .upsert({ id: created.user.id, email, role, department }, { onConflict: "id" })
+      .upsert(
+        { id: created.user.id, email, role: role || "Member", department },
+        { onConflict: "id" },
+      )
       .select("id,email,role,department,created_at")
       .single();
 
@@ -85,11 +98,12 @@ export async function POST(request: Request) {
         from,
         to: email,
         subject: "Institutional Governance AI — Your account details",
-        text: `Your Institutional Governance AI account has been created.\n\nEmail: ${email}\nTemporary password: ${temporaryPassword}\nRole: ${role}\n\nSign in: ${appUrl}/login\n\nFor security, you will be required to create a new password immediately after your first login. Do not share this email.`,
-        html: `<div style="font-family:Arial,sans-serif;line-height:1.6"><h2>Institutional Governance AI</h2><p>Your account has been created.</p><p><strong>Email:</strong> ${email}<br><strong>Temporary password:</strong> ${temporaryPassword}<br><strong>Role:</strong> ${role}</p><p><a href="${appUrl}/login">Sign in to Institutional Governance AI</a></p><p style="color:#666">For security, you will be required to create a new password immediately after your first login. Do not share this email.</p></div>`,
+        text: `Your Institutional Governance AI account has been created.\n\nEmail: ${email}\nTemporary password: ${temporaryPassword}\nRole: ${role}\nDepartment: ${department ?? "Not specified"}\n\nSign in: ${appUrl}/login\n\nFor security, you will be required to create a new password immediately after your first login. Do not share this email.`,
+        html: `<div style="font-family:Arial,sans-serif;line-height:1.6"><h2>Institutional Governance AI</h2><p>Your account has been created.</p><p><strong>Email:</strong> ${email}<br><strong>Temporary password:</strong> ${temporaryPassword}<br><strong>Role:</strong> ${role}<br><strong>Department:</strong> ${department ?? "Not specified"}</p><p><a href="${appUrl}/login">Sign in to Institutional Governance AI</a></p><p style="color:#666">For security, you will be required to create a new password immediately after your first login. Do not share this email.</p></div>`,
       });
     } catch (mailError) {
-      await admin.from("users").delete().eq("id", created.user.id);
+      // Do not leave an Auth/profile account behind when credentials could not
+      // be delivered. The Auth FK/trigger also protects profile consistency.
       await admin.auth.admin.deleteUser(created.user.id);
       const message = mailError instanceof Error ? mailError.message : "Unable to send account email.";
       return NextResponse.json({ error: message }, { status: 500 });

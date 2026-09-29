@@ -17,12 +17,13 @@ export async function updateSession(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser();
   const { pathname, search } = request.nextUrl;
+  const publicAuthRoutes = ["/login", "/forgot-password", "/reset-password", "/set-password"];
 
-  if ((pathname === "/login" || pathname === "/auth/set-password") && user) {
+  if (publicAuthRoutes.includes(pathname) && user) {
     if (pathname === "/login") return NextResponse.redirect(new URL("/dashboard", request.url));
     return response;
   }
-  if (pathname === "/login" || pathname.startsWith("/auth/callback") || pathname === "/") return response;
+  if (publicAuthRoutes.includes(pathname) || pathname.startsWith("/auth/callback") || pathname === "/") return response;
 
   if (!user) {
     const loginUrl = new URL("/login", request.url);

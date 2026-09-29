@@ -18,11 +18,10 @@ export async function updateSession(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   const { pathname, search } = request.nextUrl;
   const publicAuthRoutes = ["/login", "/forgot-password", "/reset-password", "/set-password"];
-  const mustChangePassword = user?.app_metadata?.must_change_password === true;
 
   if (publicAuthRoutes.includes(pathname) && user) {
     if (pathname === "/login") {
-      if (mustChangePassword) return NextResponse.redirect(new URL("/set-password?first_login=1", request.url));
+      if (user.user_metadata?.must_change_password === true) return NextResponse.redirect(new URL("/set-password?first_login=1", request.url));
       return NextResponse.redirect(new URL("/dashboard", request.url));
     }
     return response;
@@ -35,7 +34,7 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  if (mustChangePassword && pathname !== "/set-password") {
+  if (user.user_metadata?.must_change_password === true && pathname !== "/set-password") {
     return NextResponse.redirect(new URL("/set-password?first_login=1", request.url));
   }
 

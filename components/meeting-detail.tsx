@@ -2,6 +2,7 @@
 
 import { ReactNode, useEffect, useState } from "react";
 import Link from "next/link";
+import { useParams, useRouter } from "next/navigation";
 import { FileText, UserPlus, X } from "lucide-react";
 import { Badge, Card } from "@/components/ui";
 import { MeetingIntelligence } from "@/components/meeting-intelligence";

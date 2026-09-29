@@ -1,2 +1,5 @@
-import { AssistantView } from "@/components/phase1-live";
-export default function Assistant() { return <AssistantView />; }
+import { NaturalGovernanceAssistant } from "@/components/natural-governance-assistant";
+
+export default function Assistant() {
+  return <NaturalGovernanceAssistant />;
+}

@@ -45,7 +45,6 @@ function SetPasswordForm() {
       return;
     }
 
-    // Sign out so the invited user explicitly logs in with the password they created.
     await supabase.auth.signOut();
     router.replace("/login?password_created=1");
     router.refresh();

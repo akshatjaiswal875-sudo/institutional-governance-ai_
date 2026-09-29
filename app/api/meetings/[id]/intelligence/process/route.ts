@@ -40,7 +40,18 @@ export async function POST(request: Request, { params }: { params: { id: string 
 
     await supabase.from("meeting_recordings").update({ status: "analyzing", updated_at: new Date().toISOString() }).eq("id", recording.id);
     const [summary, extracted] = await Promise.all([summarizeTranscript(transcript), extractActions(transcript)]);
-    const analysisPayload = { meeting_id: params.id, transcript_id: transcriptId, summary: summary.executive_summary, key_points: summary.key_points, suggested_minutes: summary.suggested_minutes || summary.executive_summary, extracted_decisions: extracted.map((item) => ({ decision_text: item.decision_text, action_item: item.action_item })), extracted_action_items: extracted.map((item) => ({ task: item.action_item, assignee_email: item.assignee_email, deadline: item.due_date, priority: "Medium", status: "Pending" })), model_name: process.env.HUGGINGFACE_SUMMARY_MODEL ?? process.env.HUGGINGFACE_MODEL ?? "mistralai/Mistral-7B-Instruct-v0.2", status: "draft", updated_at: new Date().toISOString() };
+    const analysisPayload = {
+      meeting_id: params.id,
+      transcript_id: transcriptId,
+      summary: summary.executive_summary,
+      key_points: summary.key_points,
+      suggested_minutes: summary.suggested_minutes || summary.executive_summary,
+      extracted_decisions: extracted.map((item) => ({ decision_text: item.decision_text, action_item: item.action_item })),
+      extracted_action_items: extracted.map((item) => ({ task: item.action_item, assignee_email: item.assignee_email, deadline: item.due_date, priority: "Medium", status: "Pending" })),
+      model_name: process.env.HUGGINGFACE_SUMMARY_MODEL ?? process.env.HUGGINGFACE_MODEL ?? "openai/gpt-oss-120b:fastest",
+      status: "draft",
+      updated_at: new Date().toISOString(),
+    };
     const { data: existingAnalysis } = await supabase.from("meeting_ai_analysis").select("id").eq("transcript_id", transcriptId).order("created_at", { ascending: false }).limit(1).maybeSingle();
     let analysisId: string;
     if (existingAnalysis) {
@@ -51,8 +62,9 @@ export async function POST(request: Request, { params }: { params: { id: string 
       if (error) throw error; analysisId = data.id;
     }
 
+    // Optional semantic indexing must never turn a successful analysis into a failed recording.
     await replaceMeetingEmbeddings(supabase, params.id, meeting.title, transcript);
-    await supabase.from("meeting_recordings").update({ status: "completed", updated_at: new Date().toISOString() }).eq("id", recording.id);
+    await supabase.from("meeting_recordings").update({ status: "completed", error_message: null, updated_at: new Date().toISOString() }).eq("id", recording.id);
     if (["Draft", "Rejected"].includes(meeting.status)) await supabase.from("meetings").update({ status: "Transcribed" }).eq("id", params.id);
     await recordAudit(supabase, profile.id, "AI_ANALYSIS_COMPLETED", "meeting_ai_analysis", analysisId, { meeting_id: params.id, recording_id: recording.id });
     return NextResponse.json({ data: { recording_id: recording.id, transcript_id: transcriptId, analysis_id: analysisId } });

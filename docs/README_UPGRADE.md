@@ -1,0 +1,1 @@
+This branch upgrades the platform toward an AI-powered institutional memory and governance system. It hardens Supabase authorization, fixes authenticated event access, adds policy history and decision traceability data structures, adds notifications, and documents the remaining end-to-end governance workflow.

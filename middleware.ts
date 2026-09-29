@@ -20,7 +20,10 @@ export async function updateSession(request: NextRequest) {
   const publicAuthRoutes = ["/login", "/forgot-password", "/reset-password", "/set-password"];
 
   if (publicAuthRoutes.includes(pathname) && user) {
-    if (pathname === "/login") return NextResponse.redirect(new URL("/dashboard", request.url));
+    if (pathname === "/login") {
+      if (user.user_metadata?.must_change_password === true) return NextResponse.redirect(new URL("/set-password?first_login=1", request.url));
+      return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
     return response;
   }
   if (publicAuthRoutes.includes(pathname) || pathname.startsWith("/auth/callback") || pathname === "/") return response;
@@ -30,6 +33,11 @@ export async function updateSession(request: NextRequest) {
     loginUrl.searchParams.set("next", `${pathname}${search}`);
     return NextResponse.redirect(loginUrl);
   }
+
+  if (user.user_metadata?.must_change_password === true && pathname !== "/set-password") {
+    return NextResponse.redirect(new URL("/set-password?first_login=1", request.url));
+  }
+
   return response;
 }
 

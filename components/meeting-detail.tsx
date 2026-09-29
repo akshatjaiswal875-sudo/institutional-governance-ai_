@@ -1,8 +1,7 @@
 "use client";
 
-import { FormEvent, ReactNode, useEffect, useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
 import { FileText, UserPlus, X } from "lucide-react";
 import { Badge, Card } from "@/components/ui";
 import { MeetingIntelligence } from "@/components/meeting-intelligence";
@@ -47,6 +46,8 @@ function userLabel(user: any) {
   return user?.email ?? "Unknown participant";
 }
 
+const ACTION_STATUSES = ["Pending", "In Progress", "Completed"] as const;
+
 export function MeetingDetailView() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -58,6 +59,7 @@ export function MeetingDetailView() {
   const [message, setMessage] = useState("");
   const [modal, setModal] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [updatingAction, setUpdatingAction] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -91,6 +93,21 @@ export function MeetingDetailView() {
       setError(value instanceof Error ? value.message : "Operation failed.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function updateActionStatus(actionId: string, status: string) {
+    setUpdatingAction(actionId);
+    setError("");
+    setMessage("");
+    try {
+      await api(`/api/action-items/${actionId}`, { method: "PATCH", body: JSON.stringify({ status }) });
+      setMessage("Action item status updated.");
+      await load();
+    } catch (value) {
+      setError(value instanceof Error ? value.message : "Unable to update action item.");
+    } finally {
+      setUpdatingAction(null);
     }
   }
 
@@ -136,7 +153,7 @@ export function MeetingDetailView() {
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"><Info label="Date" value={dateText(meeting.date)} /><Info label="Location" value={meeting.location ?? "Remote"} /><Info label="Type" value={meeting.type} /><Info label="Status" value={meeting.status} /><Info label="Organizer" value={meeting.creator?.email ?? meeting.created_by} /><Info label="Assigned approver" value={meeting.assigned_approver?.email ?? "Not assigned"} /></div>
     <MeetingIntelligence meetingId={meeting.id} />
     <Card><div className="flex flex-wrap gap-2"><button className="btn btn-secondary" onClick={() => setModal("participant")}><UserPlus size={15} /> Add participant</button><button className="btn btn-secondary" onClick={() => setModal("agenda")}>Add agenda</button><button className="btn btn-secondary" onClick={() => setModal("minutes")}><FileText size={15} /> Add minutes</button><button className="btn btn-secondary" onClick={() => setModal("decision")}>Add decision</button><button className="btn btn-secondary" onClick={() => setModal("action")}>Add action item</button></div><div className="mt-4"><WorkflowActions meetingId={meeting.id} status={meeting.status} assignedApproverId={meeting.assigned_approver_id} approvers={options.filter(option => option.role === "Faculty / Officer")} role={currentRole} /></div></Card>
-    <div className="grid gap-6 lg:grid-cols-2"><Card><h2 className="mb-4 text-lg font-semibold">Participants</h2>{record.participants.length ? record.participants.map(participant => <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 py-2" key={participant.id}><div><p>{userLabel(participant.users)}</p><p className="text-sm text-slate-400">{participant.users?.department ?? participant.users?.role ?? "Participant"} · {participant.attendance_status}</p></div><div className="flex gap-2"><button type="button" className="btn btn-secondary text-xs" onClick={() => void inviteParticipant(participant.id)}>Invite</button><button type="button" className="btn btn-secondary text-xs" onClick={() => void removeParticipant(participant.id)}>Remove</button></div></div>) : <p className="text-slate-400">No participants added.</p>}</Card><Card><h2 className="mb-4 text-lg font-semibold">Agenda</h2>{record.agenda.length ? record.agenda.map(item => <p className="border-b border-slate-800 py-2" key={item.id}>{item.sort_order + 1}. {item.topic}</p>) : <p className="text-slate-400">No agenda items.</p>}</Card><Card><h2 className="mb-4 text-lg font-semibold">Minutes</h2>{record.minutes.length ? record.minutes.map(minute => <div className="border-b border-slate-800 py-3" key={minute.id}><Badge>Version {minute.version}</Badge><p className="mt-3 whitespace-pre-wrap text-slate-300">{minute.raw_transcript}</p></div>) : <p className="text-slate-400">No minutes recorded.</p>}</Card><Card><h2 className="mb-4 text-lg font-semibold">Decisions</h2>{record.decisions.length ? record.decisions.map(decision => <p className="border-b border-slate-800 py-2" key={decision.id}>{decision.decision_text} · {decision.status}</p>) : <p className="text-slate-400">No decisions recorded.</p>}</Card><Card><h2 className="mb-4 text-lg font-semibold">Action items</h2>{record.actions.length ? record.actions.map(item => <p className="border-b border-slate-800 py-2" key={item.id}>{item.task} · {item.status}</p>) : <p className="text-slate-400">No action items recorded.</p>}</Card></div>
+    <div className="grid gap-6 lg:grid-cols-2"><Card><h2 className="mb-4 text-lg font-semibold">Participants</h2>{record.participants.length ? record.participants.map(participant => <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 py-2" key={participant.id}><div><p>{userLabel(participant.users)}</p><p className="text-sm text-slate-400">{participant.users?.department ?? participant.users?.role ?? "Participant"} · {participant.attendance_status}</p></div><div className="flex gap-2"><button type="button" className="btn btn-secondary text-xs" onClick={() => void inviteParticipant(participant.id)}>Invite</button><button type="button" className="btn btn-secondary text-xs" onClick={() => void removeParticipant(participant.id)}>Remove</button></div></div>) : <p className="text-slate-400">No participants added.</p>}</Card><Card><h2 className="mb-4 text-lg font-semibold">Agenda</h2>{record.agenda.length ? record.agenda.map(item => <p className="border-b border-slate-800 py-2" key={item.id}>{item.sort_order + 1}. {item.topic}</p>) : <p className="text-slate-400">No agenda items.</p>}</Card><Card><h2 className="mb-4 text-lg font-semibold">Minutes</h2>{record.minutes.length ? record.minutes.map(minute => <div className="border-b border-slate-800 py-3" key={minute.id}><Badge>Version {minute.version}</Badge><p className="mt-3 whitespace-pre-wrap text-slate-300">{minute.raw_transcript}</p></div>) : <p className="text-slate-400">No minutes recorded.</p>}</Card><Card><h2 className="mb-4 text-lg font-semibold">Decisions</h2>{record.decisions.length ? record.decisions.map(decision => <p className="border-b border-slate-800 py-2" key={decision.id}>{decision.decision_text} · {decision.status}</p>) : <p className="text-slate-400">No decisions recorded.</p>}</Card><Card><h2 className="mb-4 text-lg font-semibold">Action items</h2>{record.actions.length ? record.actions.map(item => <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 py-3" key={item.id}><div className="min-w-0 flex-1"><p className="font-medium">{item.task}</p><p className="mt-1 text-sm text-slate-400">Current status: {item.status}{item.due_date ? ` · Due ${item.due_date}` : ""}{item.priority ? ` · ${item.priority}` : ""}</p></div><select aria-label={`Change status for ${item.task}`} className="select w-auto min-w-36" value={item.status} disabled={updatingAction === item.id} onChange={event => void updateActionStatus(item.id, event.target.value)}>{ACTION_STATUSES.map(status => <option key={status} value={status}>{status}</option>)}</select></div>) : <p className="text-slate-400">No action items recorded.</p>}</Card></div>
     {modal === "participant" && <Modal title="Add participants" close={() => setModal(null)}><ParticipantSelector meetingId={meeting.id} options={options} existingIds={existingIds} onSaved={() => { setModal(null); void load(); }} /></Modal>}
     {modal === "agenda" && <Modal title="Add agenda" close={() => setModal(null)}><form className="space-y-4" onSubmit={event => { event.preventDefault(); const form = new FormData(event.currentTarget); void submit(`/api/meetings/${meeting.id}/agenda`, { topic: form.get("topic"), presenter: form.get("presenter"), durationMinutes: form.get("duration") }); }}><Field label="Topic"><input name="topic" className="input" required /></Field><Field label="Presenter"><input name="presenter" className="input" /></Field><Field label="Duration minutes"><input name="duration" className="input" type="number" /></Field><button className="btn btn-primary" disabled={busy}>Save</button></form></Modal>}
     {modal === "minutes" && <Modal title="Add minutes" close={() => setModal(null)}><form className="space-y-4" onSubmit={event => { event.preventDefault(); const form = new FormData(event.currentTarget); void submit(`/api/meetings/${meeting.id}/minutes`, { rawTranscript: form.get("minutes"), summary: form.get("summary") }); }}><Field label="Minutes / transcript"><textarea name="minutes" className="textarea" required /></Field><Field label="Summary"><textarea name="summary" className="textarea" /></Field><button className="btn btn-primary" disabled={busy}>Save</button></form></Modal>}

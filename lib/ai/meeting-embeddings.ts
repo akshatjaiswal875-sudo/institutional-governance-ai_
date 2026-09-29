@@ -8,12 +8,15 @@ export async function replaceMeetingEmbeddings(
   transcript: string,
 ) {
   const chunks = chunkText(`${meetingTitle}\n${transcript}`);
-  if (!chunks.length) throw new Error("Cannot index an empty meeting transcript.");
+  if (!chunks.length) return 0;
+
+  // Embeddings are an optional enhancement. Meeting transcription and AI
+  // analysis must not fail just because the optional semantic-search provider
+  // is unavailable (the application has a free keyword-search path).
+  if (!process.env.OPENAI_API_KEY?.trim()) return 0;
 
   const vectors: number[][] = [];
-  for (const chunk of chunks) {
-    vectors.push(await embed(chunk));
-  }
+  for (const chunk of chunks) vectors.push(await embed(chunk));
 
   const { error: deleteError } = await supabase.from("embeddings").delete().eq("parent_type", "meeting").eq("parent_id", meetingId);
   if (deleteError) throw deleteError;

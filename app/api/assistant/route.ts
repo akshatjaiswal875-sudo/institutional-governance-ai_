@@ -24,6 +24,20 @@ function addSection(parts: string[], label: string, value: unknown) {
   if (text) parts.push(`${label}: ${text}`);
 }
 
+function extractSearchTerms(message: string) {
+  const stopWords = new Set([
+    'tell', 'me', 'about', 'the', 'this', 'that', 'what', 'which', 'when',
+    'where', 'who', 'how', 'why', 'was', 'were', 'is', 'are', 'give', 'show',
+    'please', 'can', 'could', 'would', 'should', 'from', 'with', 'for', 'and',
+    'meeting', 'meetings', 'information', 'details', 'summary', 'summarize',
+  ]);
+  return unique(
+    (message.match(/[A-Za-z0-9][A-Za-z0-9_-]{2,}/g) ?? [])
+      .filter((term) => !stopWords.has(term.toLowerCase()))
+      .slice(0, 6),
+  );
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = schema.parse(await req.json());
@@ -47,14 +61,46 @@ export async function POST(req: NextRequest) {
       contextParts.push(`[${key}] ${row.chunk_content}`);
     }
 
-    // 2) A meeting title match is only a pointer. Expand it into the actual
+    // 2) Natural-language questions often contain filler words, e.g.
+    // "tell me about the Trail_02". PostgreSQL websearch can fail to match
+    // that whole phrase because the underscore is part of the identifier.
+    // Resolve meaningful terms directly against visible meeting titles as a
+    // second retrieval path. RLS on this user's Supabase client remains the
+    // permission boundary.
+    const searchTerms = extractSearchTerms(body.message);
+    let directMeetings: any[] = [];
+    if (searchTerms.length) {
+      const titleFilter = searchTerms
+        .map((term) => `title.ilike.%${term.replace(/[%_,]/g, '')}%`)
+        .join(',');
+      const { data: titleMatches, error: titleError } = await supabase
+        .from('meetings')
+        .select('id,title,date,location,type,status,created_by,assigned_approver_id')
+        .or(titleFilter)
+        .limit(8);
+      if (titleError) throw titleError;
+      directMeetings = titleMatches ?? [];
+      for (const meeting of directMeetings) {
+        const key = `meeting:${meeting.id}`;
+        if (!sourceKeys.has(key)) {
+          sourceKeys.add(key);
+          contextParts.push(`[${key}:title-match] ${JSON.stringify(meeting)}`);
+        }
+      }
+    }
+
+    // 3) A meeting title match is only a pointer. Expand it into the actual
     // meeting intelligence so questions such as "summarize Trail_02", 
     // "what were the decisions?" and "who has an action item?" have enough
     // context to answer correctly.
     const meetingIds = unique(
-      rows
-        .filter((row) => row.parent_type === 'meeting')
-        .map((row) => row.parent_id)
+      directMeetings
+        .map((meeting) => meeting.id)
+        .concat(
+          rows
+            .filter((row) => row.parent_type === 'meeting')
+            .map((row) => row.parent_id),
+        )
         .concat(
           rows
             .map((row) => row.metadata?.meeting_id)
@@ -104,7 +150,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 3) Events and policies are not tied to a meeting, so include them when
+    // 4) Events and policies are not tied to a meeting, so include them when
     // the keyword search already found them. RLS on the user's Supabase client
     // remains the final permission boundary.
     const policyIds = unique(rows.filter((row) => row.parent_type === 'policy').map((row) => row.parent_id));

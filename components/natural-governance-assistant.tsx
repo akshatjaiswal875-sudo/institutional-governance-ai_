@@ -12,7 +12,6 @@ async function api<T>(url: string, options?: RequestInit): Promise<T> {
 
 type Message = { role: "user" | "assistant"; content: string };
 type ActionDraft = { title: string; date: string | null; location: string | null; participantQuery: string; topic: string };
-
 type Participant = { id: string; email: string; role: string; department?: string | null };
 
 export function NaturalGovernanceAssistant() {
@@ -27,14 +26,10 @@ export function NaturalGovernanceAssistant() {
   const [meetingPrompt, setMeetingPrompt] = useState("");
 
   async function ask(text: string) {
-    const message = text.trim();
-    if (!message || busy) return;
-    setBusy(true); setError(""); setQuery("");
-    setMessages(prev => [...prev, { role: "user", content: message }]);
-    try {
-      const result = await api<any>("/api/assistant", { method: "POST", body: JSON.stringify({ message }) });
-      setMessages(prev => [...prev, { role: "assistant", content: result.answer ?? "I couldn't find a useful answer." }]);
-    } catch (e) { setError(e instanceof Error ? e.message : "Assistant failed."); }
+    const message = text.trim(); if (!message || busy) return;
+    setBusy(true); setError(""); setQuery(""); setMessages(prev => [...prev, { role: "user", content: message }]);
+    try { const result = await api<any>("/api/assistant", { method: "POST", body: JSON.stringify({ message }) }); setMessages(prev => [...prev, { role: "assistant", content: result.answer ?? "I couldn't find a useful answer." }]); }
+    catch (e) { setError(e instanceof Error ? e.message : "Assistant failed."); }
     finally { setBusy(false); }
   }
 
@@ -42,11 +37,10 @@ export function NaturalGovernanceAssistant() {
     setBusy(true); setError("");
     try {
       const result = await api<any>("/api/assistant/meeting-action", { method: "POST", body: JSON.stringify({ action: "prepare", message }) });
-      if (result.needs?.length) {
-        setError(`Meeting needs: ${result.needs.join(", ")}. Try mentioning a date/time and a participant department, role, or email.`);
-      }
+      const hasNeeds = Boolean(result.needs?.length);
+      if (hasNeeds) setError(`Meeting needs: ${result.needs.join(", ")}. Try mentioning a date/time and a participant department, role, or email.`);
       setDraft(result.draft ?? null); setParticipants(result.participants ?? []); setSelected([]);
-      return true;
+      return !hasNeeds;
     } catch (e) { setError(e instanceof Error ? e.message : "Unable to prepare meeting."); return false; }
     finally { setBusy(false); }
   }
@@ -64,7 +58,6 @@ export function NaturalGovernanceAssistant() {
   }
 
   function submit(event: FormEvent) { event.preventDefault(); void ask(query); }
-
   const suggestions = ["Tell me about Trail_02", "Summarize my latest meeting", "Show pending action items", "What decisions were made recently?"];
 
   return <div className="mx-auto max-w-5xl space-y-6">

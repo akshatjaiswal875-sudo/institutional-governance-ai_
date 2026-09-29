@@ -10,7 +10,15 @@ export async function GET(req: Request) {
   const code = url.searchParams.get("code");
   const tokenHash = url.searchParams.get("token_hash");
   const type = url.searchParams.get("type");
-  const next = safeNext(url.searchParams.get("next"), type === "invite" ? "/auth/set-password" : "/dashboard");
+
+  // Invitation users must set their password before entering the dashboard.
+  // Recovery users must choose a new password as well.
+  const fallback = type === "invite"
+    ? "/set-password"
+    : type === "recovery"
+      ? "/reset-password"
+      : "/dashboard";
+  const next = safeNext(url.searchParams.get("next"), fallback);
 
   if (!code && !tokenHash) {
     return NextResponse.redirect(new URL("/login?error=Missing authentication callback code.", url.origin));

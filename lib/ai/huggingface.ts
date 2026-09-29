@@ -9,7 +9,12 @@ type HuggingFaceResult = {
 };
 
 const MAX_TRANSCRIPT_CHARS = 120_000;
-const DEFAULT_ANALYSIS_MODEL = "google/gemma-2-2b-it";
+const DEFAULT_ANALYSIS_MODEL = "Qwen/Qwen2.5-1.5B-Instruct";
+const FALLBACK_ANALYSIS_MODELS = [
+  "Qwen/Qwen2.5-1.5B-Instruct",
+  "HuggingFaceTB/SmolLM2-1.7B-Instruct",
+  "google/gemma-2-2b-it",
+];
 
 function resolveAnalysisModel(configured?: string) {
   const model = configured?.trim();
@@ -37,66 +42,93 @@ function formatProviderError(value: unknown): string {
   return String(value ?? "Unknown provider error");
 }
 
+function isUnsupportedModelError(status: number, detail: string) {
+  const text = detail.toLowerCase();
+  return status === 400 && (
+    text.includes("not supported by any provider") ||
+    text.includes("no provider") ||
+    text.includes("provider you have enabled") ||
+    text.includes("model is not available")
+  );
+}
+
 async function callHuggingFace(prompt: string, model: string) {
   const apiKey = process.env.HUGGINGFACE_API_KEY?.trim();
   if (!apiKey) throw new Error("HUGGINGFACE_API_KEY is missing.");
-  const selectedModel = resolveAnalysisModel(model);
+
+  const configuredModel = resolveAnalysisModel(model);
+  const candidates = [
+    configuredModel,
+    ...FALLBACK_ANALYSIS_MODELS.filter((candidate) => candidate !== configuredModel),
+  ];
 
   let lastError = "Hugging Face request failed.";
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 55_000);
-    try {
-      const response = await fetch("https://router.huggingface.co/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: selectedModel,
-          messages: [{ role: "user", content: prompt }],
-          max_tokens: 700,
-          temperature: 0.2,
-          stream: false,
-        }),
-        signal: controller.signal,
-      });
 
-      const bodyText = await response.text();
-      let payload: HuggingFaceResult | null = null;
-      try { payload = JSON.parse(bodyText) as HuggingFaceResult; } catch { /* non-JSON response */ }
+  for (const selectedModel of candidates) {
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 55_000);
+      try {
+        const response = await fetch("https://router.huggingface.co/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: selectedModel,
+            messages: [{ role: "user", content: prompt }],
+            max_tokens: 700,
+            temperature: 0.2,
+            stream: false,
+          }),
+          signal: controller.signal,
+        });
 
-      if (!response.ok) {
-        const detail = payload
-          ? formatProviderError(payload.error ?? payload.message)
-          : bodyText.trim() || `HTTP ${response.status}`;
-        lastError = `Hugging Face request failed (${response.status}): ${detail}`;
-        if (![429, 500, 502, 503, 504].includes(response.status) || attempt === 3) throw new Error(lastError);
+        const bodyText = await response.text();
+        let payload: HuggingFaceResult | null = null;
+        try { payload = JSON.parse(bodyText) as HuggingFaceResult; } catch { /* non-JSON response */ }
+
+        if (!response.ok) {
+          const detail = payload
+            ? formatProviderError(payload.error ?? payload.message)
+            : bodyText.trim() || `HTTP ${response.status}`;
+          lastError = `Hugging Face request failed (${response.status}): ${detail}`;
+
+          // A 400 provider/model mismatch is not transient. Try the next
+          // compatible model instead of retrying the same unsupported model.
+          if (isUnsupportedModelError(response.status, detail)) break;
+
+          if (![429, 500, 502, 503, 504].includes(response.status) || attempt === 3) {
+            throw new Error(lastError);
+          }
+          await new Promise((resolve) => setTimeout(resolve, attempt * 1200));
+          continue;
+        }
+
+        if (!payload) throw new Error("Hugging Face returned an invalid response.");
+        if (payload.error) throw new Error(`Hugging Face error: ${formatProviderError(payload.error)}`);
+
+        const content = payload.choices?.[0]?.message?.content
+          ?? payload.choices?.[0]?.text
+          ?? payload.generated_text
+          ?? payload.answer
+          ?? payload.summary
+          ?? payload.text
+          ?? "";
+        if (!content.trim()) throw new Error("Hugging Face returned an empty analysis response.");
+        return content;
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") lastError = "Hugging Face request timed out.";
+        else if (error instanceof Error) lastError = error.message;
+        if (attempt === 3) throw new Error(lastError);
         await new Promise((resolve) => setTimeout(resolve, attempt * 1200));
-        continue;
+      } finally {
+        clearTimeout(timeout);
       }
-
-      if (!payload) throw new Error("Hugging Face returned an invalid response.");
-      if (payload.error) throw new Error(`Hugging Face error: ${formatProviderError(payload.error)}`);
-      const content = payload.choices?.[0]?.message?.content
-        ?? payload.choices?.[0]?.text
-        ?? payload.generated_text
-        ?? payload.answer
-        ?? payload.summary
-        ?? payload.text
-        ?? "";
-      if (!content.trim()) throw new Error("Hugging Face returned an empty analysis response.");
-      return content;
-    } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") lastError = "Hugging Face request timed out.";
-      else if (error instanceof Error) lastError = error.message;
-      if (attempt === 3) throw new Error(lastError);
-      await new Promise((resolve) => setTimeout(resolve, attempt * 1200));
-    } finally {
-      clearTimeout(timeout);
     }
   }
+
   throw new Error(lastError);
 }
 

@@ -10,6 +10,7 @@ export async function GET(req: Request) {
   const code = url.searchParams.get("code");
   const tokenHash = url.searchParams.get("token_hash");
   const type = url.searchParams.get("type");
+  const requestedNext = safeNext(url.searchParams.get("next"), "");
 
   if (!code && !tokenHash) {
     return NextResponse.redirect(new URL("/login?error=Missing authentication callback code.", url.origin));
@@ -33,13 +34,16 @@ export async function GET(req: Request) {
       if (error) throw error;
     }
 
-    // Never allow an invitation/recovery link to bypass password setup,
-    // even if Supabase supplies a dashboard redirect in the URL.
+    // Invite links must land on the password setup page before the user can
+    // enter the application. Recovery links use the reset-password page.
+    // For PKCE/code callbacks Supabase may not include `type`, so an explicit
+    // next=/set-password is honored and the no-next code flow defaults to
+    // password setup rather than accidentally sending a new invite to login.
     const destination = type === "invite"
       ? "/set-password"
       : type === "recovery"
         ? "/reset-password"
-        : safeNext(url.searchParams.get("next"), "/dashboard");
+        : requestedNext || (code ? "/set-password" : "/dashboard");
 
     return NextResponse.redirect(new URL(destination, url.origin));
   } catch (error) {

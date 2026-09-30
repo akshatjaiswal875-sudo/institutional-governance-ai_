@@ -48,7 +48,7 @@ export function MeetingIntelligence({ meetingId }: { meetingId: string }) {
     if (processingId) return;
     setProcessingId(recordingId); setError(""); setMessage("Processing with Local Whisper and Hugging Face…");
     try { await readJson(await fetch(`/api/meetings/${meetingId}/intelligence/process`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ recordingId }) })); setMessage("Processing completed. Review the results below."); await load(); }
-    catch (e) { setError(e instanceof Error ? e.message : "Processing failed."); await load().catch(() => undefined); } finally { setProcessingId(null); }
+    catch (e) { setError(e instanceof Error ? e.message : "Processing failed."); await load().catch((): void => undefined); } finally { setProcessingId(null); }
   }
 
   async function deleteRecording(id: string) {

@@ -26,7 +26,21 @@ export async function POST(request: NextRequest) {
     const date = typeof body.date === "string" ? body.date : "";
     const location = typeof body.location === "string" && body.location.trim() ? body.location.trim() : null;
     const type = body.type === "online" ? "online" : "offline";
+    const suppliedConferenceUrl = typeof body.conference_url === "string" ? body.conference_url.trim() : "";
     if (!title || !date) return NextResponse.json({ error: "Meeting title and date are required." }, { status: 400 });
+
+    let conferenceUrl: string | null = null;
+    if (type === "online") {
+      if (suppliedConferenceUrl) {
+        try {
+          const parsed = new URL(suppliedConferenceUrl);
+          if (!/^https?:$/.test(parsed.protocol)) throw new Error("Invalid protocol");
+          conferenceUrl = parsed.toString();
+        } catch {
+          return NextResponse.json({ error: "Please enter a valid online meeting URL starting with https:// or http://." }, { status: 400 });
+        }
+      }
+    }
 
     const { data, error } = await supabase
       .from("meetings")
@@ -35,9 +49,11 @@ export async function POST(request: NextRequest) {
       .single();
     if (error) return NextResponse.json({ error: error.message, details: error.details, hint: error.hint, code: error.code }, { status: 403 });
 
-    let conferenceUrl: string | null = null;
-    if (type === "online") {
+    if (type === "online" && !conferenceUrl) {
       conferenceUrl = `https://meet.jit.si/InstitutionalGovernance-${data.id}`;
+    }
+
+    if (conferenceUrl) {
       const { error: linkError } = await supabase.from("meetings").update({ conference_url: conferenceUrl }).eq("id", data.id);
       if (linkError) throw linkError;
       data.conference_url = conferenceUrl;
@@ -55,7 +71,7 @@ export async function POST(request: NextRequest) {
         user_id: recipient.id,
         type: "meeting",
         title: type === "online" ? "New online meeting" : "New meeting",
-        message: type === "online" ? `${title} is scheduled for ${new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(date))}. Tap to join online.` : `${title} is scheduled for ${new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(date))}.`,
+        message: type === "online" && conferenceUrl ? `${title} is scheduled for ${new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(date))}. Join: ${conferenceUrl}` : `${title} is scheduled for ${new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(date))}.`,
         target_table: "meetings",
         target_id: data.id,
       }));
@@ -88,6 +104,7 @@ export async function POST(request: NextRequest) {
       creator_role: profile.role,
       type,
       conference_url: conferenceUrl,
+      custom_conference_url: Boolean(suppliedConferenceUrl),
       notifications_sent: users?.length ?? 0,
     });
 

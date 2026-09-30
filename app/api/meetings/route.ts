@@ -30,15 +30,13 @@ export async function POST(request: NextRequest) {
     if (!title || !date) return NextResponse.json({ error: "Meeting title and date are required." }, { status: 400 });
 
     let conferenceUrl: string | null = null;
-    if (type === "online") {
-      if (suppliedConferenceUrl) {
-        try {
-          const parsed = new URL(suppliedConferenceUrl);
-          if (!/^https?:$/.test(parsed.protocol)) throw new Error("Invalid protocol");
-          conferenceUrl = parsed.toString();
-        } catch {
-          return NextResponse.json({ error: "Please enter a valid online meeting URL starting with https:// or http://." }, { status: 400 });
-        }
+    if (type === "online" && suppliedConferenceUrl) {
+      try {
+        const parsed = new URL(suppliedConferenceUrl);
+        if (!/^https?:$/.test(parsed.protocol)) throw new Error("Invalid protocol");
+        conferenceUrl = parsed.toString();
+      } catch {
+        return NextResponse.json({ error: "Please enter a valid online meeting URL starting with https:// or http://." }, { status: 400 });
       }
     }
 
@@ -49,10 +47,7 @@ export async function POST(request: NextRequest) {
       .single();
     if (error) return NextResponse.json({ error: error.message, details: error.details, hint: error.hint, code: error.code }, { status: 403 });
 
-    if (type === "online" && !conferenceUrl) {
-      conferenceUrl = `https://meet.jit.si/InstitutionalGovernance-${data.id}`;
-    }
-
+    if (type === "online" && !conferenceUrl) conferenceUrl = `https://meet.jit.si/InstitutionalGovernance-${data.id}`;
     if (conferenceUrl) {
       const { error: linkError } = await supabase.from("meetings").update({ conference_url: conferenceUrl }).eq("id", data.id);
       if (linkError) throw linkError;
@@ -67,35 +62,34 @@ export async function POST(request: NextRequest) {
     if (usersError) throw usersError;
 
     if (users?.length) {
+      const formattedDate = new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(date));
       const notificationRows = users.map((recipient) => ({
         user_id: recipient.id,
         type: "meeting",
         title: type === "online" ? "New online meeting" : "New meeting",
-        message: type === "online" && conferenceUrl ? `${title} is scheduled for ${new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(date))}. Join: ${conferenceUrl}` : `${title} is scheduled for ${new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(date))}.`,
+        message: type === "online" && conferenceUrl ? `${title} is scheduled for ${formattedDate}. Join: ${conferenceUrl}` : `${title} is scheduled for ${formattedDate}.`,
         target_table: "meetings",
         target_id: data.id,
       }));
       const { error: notificationError } = await admin.from("notifications").insert(notificationRows);
       if (notificationError) console.error("Meeting notifications could not be created:", notificationError);
 
-      if (type === "online" && conferenceUrl) {
-        const organizer = user.email ?? "Institutional Governance";
-        await Promise.allSettled(
-          users.map((recipient) =>
-            sendMeetingInvitation({
-              recipientEmail: recipient.email,
-              recipientName: recipient.email,
-              meetingTitle: title,
-              meetingId: data.id,
-              conferenceUrl,
-              date: new Intl.DateTimeFormat("en-IN", { dateStyle: "full", timeStyle: "short" }).format(new Date(date)),
-              organizer,
-              location: "Online",
-              agenda: (agenda ?? []).map((item) => `${item.sort_order + 1}. ${item.topic}`),
-            }),
-          ),
-        );
-      }
+      const organizer = user.email ?? "Institutional Governance";
+      await Promise.allSettled(
+        users.map((recipient) =>
+          sendMeetingInvitation({
+            recipientEmail: recipient.email,
+            recipientName: recipient.email,
+            meetingTitle: title,
+            meetingId: data.id,
+            conferenceUrl: type === "online" ? conferenceUrl : null,
+            date: new Intl.DateTimeFormat("en-IN", { dateStyle: "full", timeStyle: "short" }).format(new Date(date)),
+            organizer,
+            location: type === "online" ? "Online" : location,
+            agenda: (agenda ?? []).map((item) => `${item.sort_order + 1}. ${item.topic}`),
+          }),
+        ),
+      );
     }
 
     await recordAudit(supabase, profile.id, "CREATE_MEETING", "meetings", data.id, {

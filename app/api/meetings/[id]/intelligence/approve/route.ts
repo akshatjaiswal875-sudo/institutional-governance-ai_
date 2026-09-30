@@ -2,9 +2,11 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { recordAudit } from "@/lib/audit";
 
+const AI_APPROVERS = ["Director", "Principal", "HOD", "Coordinator", "Super Admin", "Meeting Secretary"] as const;
+
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   try {
-    const { supabase, profile } = await requireUser(["Super Admin", "Meeting Secretary"]);
+    const { supabase, profile } = await requireUser([...AI_APPROVERS]);
     const body = await request.json();
     const analysisId = typeof body.analysisId === "string" ? body.analysisId : "";
     if (!analysisId) return NextResponse.json({ error: "Analysis is required." }, { status: 400 });
@@ -51,7 +53,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
 
     const { data: updated, error: updateError } = await supabase.from("meeting_ai_analysis").update({ summary, suggested_minutes: suggestedMinutes, extracted_decisions: decisions, extracted_action_items: actionItems, status: "approved", updated_at: new Date().toISOString() }).eq("id", analysisId).select("id,status").single();
     if (updateError) throw updateError;
-    await recordAudit(supabase, profile.id, "AI_RESULT_APPROVED", "meeting_ai_analysis", analysisId, { meeting_id: params.id, minutes_id: minuteId });
+    await recordAudit(supabase, profile.id, "AI_RESULT_APPROVED", "meeting_ai_analysis", analysisId, { meeting_id: params.id, minutes_id: minuteId, approver_role: profile.role });
     return NextResponse.json({ data: updated });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to approve AI results." }, { status: 400 });

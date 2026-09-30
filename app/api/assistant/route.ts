@@ -16,6 +16,8 @@ const NATURAL_RESPONSES: Array<{ pattern: RegExp; answer: string }> = [
 ];
 
 const DOMAIN_TERMS = /\b(meeting|meetings|meet|agenda|minutes?|decision|decisions|action\s*items?|participant|participants|attendee|attendees|schedule|scheduled|calendar|policy|policies|event|events|institutional|governance)\b/i;
+const QUERY_INTENT_TERMS = /\b(show|give|find|get|tell|summar(?:y|ize)|summary|details?|status|when|where|who|list|explain|which|what|is|are|has|have|latest|recent|upcoming|next)\b/i;
+const RECORD_REFERENCE = /\b[A-Za-z][A-Za-z0-9]*(?:[_-][A-Za-z0-9]+|\d+[A-Za-z0-9_-]*)\b/;
 
 function naturalResponse(message: string): string | null {
   const normalized = message.trim();
@@ -23,7 +25,10 @@ function naturalResponse(message: string): string | null {
 }
 
 function isGovernanceQuestion(message: string): boolean {
-  return DOMAIN_TERMS.test(message);
+  if (DOMAIN_TERMS.test(message)) return true;
+  // Allow natural questions about a specific named record such as "give me the summary of Trail_02",
+  // while still rejecting unrelated questions such as "2+2" or general trivia.
+  return QUERY_INTENT_TERMS.test(message) && RECORD_REFERENCE.test(message);
 }
 
 type SearchRow = {

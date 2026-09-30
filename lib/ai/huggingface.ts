@@ -9,8 +9,6 @@ type HuggingFaceResult = {
 };
 
 const MAX_TRANSCRIPT_CHARS = 120_000;
-// Hugging Face documents GPT OSS as available through Inference Providers;
-// :fastest lets the router choose an available provider automatically.
 const DEFAULT_ANALYSIS_MODEL = "openai/gpt-oss-120b:fastest";
 const FALLBACK_ANALYSIS_MODELS = [
   "openai/gpt-oss-120b:fastest",
@@ -150,12 +148,12 @@ export async function extractActionsWithHuggingFace(transcript: string) {
 export async function answerWithHuggingFace(context: string, question: string) {
   const model = resolveAnalysisModel(process.env.HUGGINGFACE_ANSWER_MODEL || process.env.HUGGINGFACE_MODEL);
   const safeContext = context.slice(0, MAX_TRANSCRIPT_CHARS);
-  const prompt = `Answer only from the provided institutional context. If the context is insufficient, say: "No relevant meeting information was found." Never invent meeting facts. Use source identifiers like [meeting:ID] when available.\n\nContext:\n${safeContext}\n\nQuestion:\n${question}`;
+  const prompt = `You are the institutional Governance AI Assistant. Answer naturally and conversationally, but only use facts supported by the provided institutional context. The allowed subject areas are meetings, meeting decisions/action items, policies, and events. Do not invent facts. Treat capitalization as irrelevant. If the context does not support the user's governance question, say exactly: "I could not find a matching meeting, policy, or event record. Please try a more specific question." Use source identifiers like [meeting:ID] when available.\n\nContext:\n${safeContext}\n\nQuestion:\n${question}`;
   try {
     const response = await callHuggingFace(prompt, model);
-    return response.trim() || "No relevant meeting information was found.";
+    return response.trim() || "I could not find a matching meeting, policy, or event record. Please try a more specific question.";
   } catch {
-    if (!safeContext.trim()) return "No relevant meeting information was found.";
-    return `AI provider is temporarily unavailable. Relevant records found:\n\n${safeContext.slice(0, 1800)}`;
+    if (!safeContext.trim()) return "I could not find a matching meeting, policy, or event record. Please try a more specific question.";
+    return `AI provider is temporarily unavailable. Relevant institutional records found:\n\n${safeContext.slice(0, 1800)}`;
   }
 }

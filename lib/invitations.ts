@@ -19,7 +19,7 @@ function escapeHtml(value: string) {
 export async function sendMeetingInvitation(invitation: MeetingInvitation): Promise<void> {
   const user = process.env.GMAIL_SMTP_USER?.trim();
   const appPassword = process.env.GMAIL_SMTP_APP_PASSWORD?.replace(/\s+/g, "").trim();
-  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || "https://institutional-governance-ai.vercel.app").replace(/\/$/, "");
+  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || "https://institutional-governance-ai.onrender.com").replace(/\/$/, "");
 
   if (!user || !appPassword) {
     throw new Error("Email invitations are not configured. Set GMAIL_SMTP_USER and GMAIL_SMTP_APP_PASSWORD on the server.");

@@ -10,26 +10,25 @@ export async function POST(request: Request, { params }: { params: { id: string 
     const body = await request.json();
     const reason = typeof body.reason === "string" ? body.reason.trim() : "";
 
-    if (reason.length < 5) {
-      return NextResponse.json({ error: "Please provide a reason of at least 5 characters." }, { status: 400 });
-    }
-    if (reason.length > 1000) {
-      return NextResponse.json({ error: "Reason must be 1000 characters or fewer." }, { status: 400 });
-    }
+    if (reason.length < 5) return NextResponse.json({ error: "Please provide a reason of at least 5 characters." }, { status: 400 });
+    if (reason.length > 1000) return NextResponse.json({ error: "Reason must be 1000 characters or fewer." }, { status: 400 });
 
     const admin = createAdminClient();
     const { data: meeting, error: meetingError } = await admin
       .from("meetings")
-      .select("id,title,date,created_by,users!meetings_created_by_fkey(email)")
+      .select("id,title,date,created_by")
       .eq("id", params.id)
       .maybeSingle();
     if (meetingError) throw meetingError;
     if (!meeting) return NextResponse.json({ error: "Meeting not found." }, { status: 404 });
 
-    const organizer = Array.isArray(meeting.users) ? meeting.users[0] : meeting.users;
-    if (!organizer?.email) {
-      return NextResponse.json({ error: "The meeting organizer email could not be found." }, { status: 500 });
-    }
+    const { data: organizer, error: organizerError } = await admin
+      .from("users")
+      .select("email")
+      .eq("id", meeting.created_by)
+      .maybeSingle();
+    if (organizerError) throw organizerError;
+    if (!organizer?.email) return NextResponse.json({ error: "The meeting organizer email could not be found." }, { status: 500 });
 
     const { data: participant, error: participantError } = await supabase
       .from("participants")
@@ -39,9 +38,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
       .maybeSingle();
     if (participantError) throw participantError;
     if (!participant) return NextResponse.json({ error: "You are not an invited participant for this meeting." }, { status: 403 });
-    if (participant.attendance_status === "Declined") {
-      return NextResponse.json({ error: "You have already declined this meeting." }, { status: 409 });
-    }
+    if (participant.attendance_status === "Declined") return NextResponse.json({ error: "You have already declined this meeting." }, { status: 409 });
 
     const { error: updateError } = await supabase
       .from("participants")

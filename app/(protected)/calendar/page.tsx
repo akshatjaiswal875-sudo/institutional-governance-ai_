@@ -1,4 +1,4 @@
-use client;
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight, Clock3, MapPin, Sparkles, UserRound } from "lucide-react";

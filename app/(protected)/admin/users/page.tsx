@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { UsersView } from "@/components/phase1-live";
+import { UsersDirectory } from "@/components/users-directory";
 
 export default function Users() {
   return (
@@ -7,7 +7,7 @@ export default function Users() {
       <div className="flex justify-end">
         <Link href="/admin/users/invite" className="btn btn-primary">Create new user</Link>
       </div>
-      <UsersView />
+      <UsersDirectory />
     </div>
   );
 }

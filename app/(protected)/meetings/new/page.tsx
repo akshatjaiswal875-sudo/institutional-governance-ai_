@@ -1,2 +1,5 @@
-import { NewMeetingView } from "@/components/phase1-live";
-export default function NewMeeting() { return <NewMeetingView />; }
+import { OnlineMeetingForm } from "@/components/online-meeting-form";
+
+export default function NewMeeting() {
+  return <OnlineMeetingForm />;
+}

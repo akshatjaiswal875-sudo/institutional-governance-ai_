@@ -63,24 +63,27 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
     return () => window.removeEventListener("keydown", handleShortcut);
   }, [toggleSidebar]);
 
+  // Load the session once per app mount instead of refetching auth/profile/notifications
+  // on every route change. Route changes should only update the page content.
   useEffect(() => {
-    if (pathname === "/login") return;
-
     const supabase = createClient();
     let active = true;
 
-    async function loadUser() {
-      const { data } = await supabase.auth.getUser();
-      if (!active || !data.user) return;
+    async function loadUser(userId?: string, email?: string) {
+      const user = userId
+        ? { id: userId, email: email ?? "" }
+        : (await supabase.auth.getUser()).data.user;
+
+      if (!active || !user) return;
 
       const [{ data: profile }, notificationResult] = await Promise.all([
-        supabase.from("users").select("role").eq("id", data.user.id).maybeSingle<{ role: string | null }>(),
+        supabase.from("users").select("role").eq("id", user.id).maybeSingle<{ role: string | null }>(),
         supabase.from("notifications").select("id", { count: "exact", head: true }).is("read_at", null),
       ]);
 
       if (!active) return;
       setSessionUser({
-        email: data.user.email ?? "",
+        email: user.email ?? "",
         role: profile?.role ?? null,
         unread: notificationResult.count ?? 0,
       });
@@ -92,14 +95,18 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       if (!active) return;
       if (event === "SIGNED_OUT" || !session?.user) {
         setSessionUser({ email: "", role: null, unread: 0 });
+        return;
       }
+
+      // Refresh only when the authentication state actually changes.
+      void loadUser(session.user.id, session.user.email ?? "");
     });
 
     return () => {
       active = false;
       listener.subscription.unsubscribe();
     };
-  }, [pathname]);
+  }, []);
 
   if (pathname === "/login") return <>{children}</>;
 

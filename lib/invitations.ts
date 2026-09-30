@@ -32,7 +32,16 @@ function createTransporter() {
   if (!user || !appPassword) {
     throw new Error("Email notifications are not configured. Set GMAIL_SMTP_USER and GMAIL_SMTP_APP_PASSWORD on the server.");
   }
-  return { user, transporter: nodemailer.createTransport({ host: "smtp.gmail.com", port: 465, secure: true, auth: { user, pass: appPassword } }) };
+  const transporter = nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true,
+    auth: { user, pass: appPassword },
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
+  });
+  return { user, transporter };
 }
 
 function getSiteUrl() {
@@ -51,6 +60,7 @@ export async function sendMeetingInvitation(invitation: MeetingInvitation): Prom
   const onlineHtml = invitation.conferenceUrl ? `<p style="margin:24px 0"><a href="${escapeHtml(invitation.conferenceUrl)}" style="background:#315c4f;color:#fff;padding:13px 22px;border-radius:8px;text-decoration:none;font-weight:700;display:inline-block">Join online meeting</a></p><p style="font-size:12px;color:#64748b;word-break:break-all">${escapeHtml(invitation.conferenceUrl)}</p>` : "";
 
   try {
+    await transporter.verify();
     await transporter.sendMail({
       from: `Institutional Governance <${user}>`,
       to: invitation.recipientEmail,
@@ -71,6 +81,7 @@ export async function sendMeetingDeclineNotification(notification: MeetingDeclin
   const siteUrl = getSiteUrl();
   const meetingUrl = `${siteUrl}/meetings/${encodeURIComponent(notification.meetingId)}`;
   try {
+    await transporter.verify();
     await transporter.sendMail({
       from: `Institutional Governance <${user}>`,
       to: notification.organizerEmail,

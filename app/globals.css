@@ -22,6 +22,10 @@
   --heading: #193B68;
   --body-text: #61799B;
   --muted-text: #94A8C2;
+  --success: #18B9A7;
+  --warning: #D99A24;
+  --danger: #D65C73;
+  --info: #5A9FE3;
 }
 
 * { box-sizing: border-box; }
@@ -46,8 +50,8 @@ body:before {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  opacity: .48;
-  background: linear-gradient(135deg, rgba(217,243,255,.30) 0%, rgba(201,244,232,.20) 45%, rgba(220,213,255,.27) 100%);
+  opacity: .62;
+  background: linear-gradient(135deg, rgba(217,243,255,.36) 0%, rgba(201,244,232,.25) 45%, rgba(220,213,255,.32) 100%);
   z-index: -1;
 }
 
@@ -71,10 +75,10 @@ p { color: var(--body-text); }
 small, .text-muted, [class*="text-muted"] { color: var(--muted-text); }
 
 .card {
-  background: var(--white);
+  background: rgba(255,255,255,.96);
   border: 1px solid var(--soft-border);
   border-radius: 20px;
-  box-shadow: 0 18px 50px rgba(25,59,104,.07), inset 0 1px 0 rgba(255,255,255,.9);
+  box-shadow: 0 18px 50px rgba(25,59,104,.07), inset 0 1px 0 rgba(255,255,255,.95);
   backdrop-filter: blur(16px) saturate(108%);
   transition: transform .22s ease, border-color .22s ease, box-shadow .22s ease;
 }
@@ -105,11 +109,7 @@ small, .text-muted, [class*="text-muted"] { color: var(--muted-text); }
   box-shadow: 0 9px 24px rgba(104,189,242,.20);
 }
 .btn-primary:hover:not(:disabled) { box-shadow: 0 12px 28px rgba(145,120,242,.24); filter: brightness(1.03); }
-.btn-secondary {
-  background: #FFFFFF;
-  color: var(--heading);
-  border: 1px solid var(--soft-border);
-}
+.btn-secondary { background: #FFFFFF; color: var(--heading); border: 1px solid var(--soft-border); }
 .btn-secondary:hover:not(:disabled) { border-color: rgba(104,189,242,.55); background: #FFFFFF; }
 
 .input, .select, .textarea {
@@ -125,57 +125,28 @@ small, .text-muted, [class*="text-muted"] { color: var(--muted-text); }
 }
 .input::placeholder, .textarea::placeholder { color: var(--muted-text); }
 .input:hover, .select:hover, .textarea:hover { border-color: rgba(104,189,242,.48); }
-.input:focus, .select:focus, .textarea:focus {
-  border-color: var(--sky-blue);
-  background: #FFFFFF;
-  box-shadow: 0 0 0 3px rgba(24,185,167,.10);
-  transform: translateY(-1px);
-}
+.input:focus, .select:focus, .textarea:focus { border-color: var(--sky-blue); background: #FFFFFF; box-shadow: 0 0 0 3px rgba(24,185,167,.10); transform: translateY(-1px); }
 .textarea { min-height: 130px; resize: vertical; }
 
-.badge {
-  display: inline-flex;
-  align-items: center;
-  border-radius: 999px;
-  padding: .28rem .68rem;
-  font-size: 12px;
-  font-weight: 700;
-  background: rgba(24,185,167,.09);
-  color: #168F83;
-  white-space: nowrap;
-  border: 1px solid rgba(24,185,167,.18);
-}
+.badge { display: inline-flex; align-items: center; border-radius: 999px; padding: .28rem .68rem; font-size: 12px; font-weight: 700; background: rgba(24,185,167,.09); color: #168F83; white-space: nowrap; border: 1px solid rgba(24,185,167,.18); }
+
+/* Universal light-theme normalization for legacy Tailwind dark classes. This changes visual tokens only. */
+[class*="bg-slate-950"], [class*="bg-slate-900"], [class*="bg-slate-800"], [class*="bg-gray-950"], [class*="bg-gray-900"], [class*="bg-zinc-950"], [class*="bg-zinc-900"], [class*="bg-black"] { background-color: #FFFFFF !important; background-image: none !important; }
+[class*="bg-slate-700"], [class*="bg-slate-800"], [class*="bg-gray-700"], [class*="bg-gray-800"], [class*="bg-zinc-700"], [class*="bg-zinc-800"] { background-color: #F6F8FC !important; }
+[class*="border-slate-"], [class*="border-gray-"], [class*="border-zinc-"] { border-color: #E5EAF2 !important; }
+[class*="text-white"], [class*="text-slate-100"], [class*="text-slate-200"], [class*="text-slate-300"], [class*="text-gray-100"], [class*="text-gray-200"], [class*="text-gray-300"] { color: #193B68 !important; }
+[class*="text-slate-400"], [class*="text-slate-500"], [class*="text-gray-400"], [class*="text-gray-500"], [class*="text-zinc-400"], [class*="text-zinc-500"] { color: #61799B !important; }
+[class*="text-cyan-"], [class*="text-sky-"] { color: #168F83 !important; }
+[class*="text-indigo-"], [class*="text-violet-"], [class*="text-purple-"] { color: #735FCB !important; }
+[class*="shadow-cyan-"], [class*="shadow-slate-"], [class*="shadow-black"] { --tw-shadow-color: rgba(25,59,104,.10) !important; }
 
 .mobile-bottom-nav {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 50;
-  display: grid;
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   padding: 7px max(8px, env(safe-area-inset-left)) max(7px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-right));
-  background: rgba(255,255,255,.94);
-  border-top: 1px solid var(--soft-border);
-  box-shadow: 0 -14px 35px rgba(25,59,104,.08);
-  backdrop-filter: blur(18px);
+  background: rgba(255,255,255,.96); border-top: 1px solid var(--soft-border); box-shadow: 0 -14px 35px rgba(25,59,104,.08); backdrop-filter: blur(18px);
 }
-.mobile-bottom-nav-item {
-  min-width: 0;
-  min-height: 48px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  border: 0;
-  background: transparent;
-  color: var(--muted-text);
-  font-size: 12px;
-  font-weight: 600;
-  text-decoration: none;
-  touch-action: manipulation;
-}
+.mobile-bottom-nav-item { min-width: 0; min-height: 48px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: 0; background: transparent; color: var(--muted-text); font-size: 12px; font-weight: 600; text-decoration: none; touch-action: manipulation; }
 .mobile-bottom-nav-item.is-active { color: var(--aqua); background: rgba(201,244,232,.45); border-radius: 13px; }
 .mobile-bottom-nav-item:active { transform: scale(.96); }
 
@@ -195,7 +166,4 @@ small, .text-muted, [class*="text-muted"] { color: var(--muted-text); }
   .textarea { min-height: 120px; }
 }
 @media (min-width: 1280px) { .mobile-bottom-nav { display: none; } }
-@media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
-  *, *::before, *::after { transition: none !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
-}
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } *, *::before, *::after { transition: none !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; } }

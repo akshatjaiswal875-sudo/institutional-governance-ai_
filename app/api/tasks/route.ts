@@ -9,10 +9,10 @@ export async function GET(request: Request) {
     const { profile } = await requireUser();
     const admin = createAdminClient();
     const view = new URL(request.url).searchParams.get("view") === "delegated" ? "delegated" : "workspace";
+    if (view === "delegated" && !ASSIGNERS.includes(profile.role as typeof ASSIGNERS[number])) return NextResponse.json({ error: "Only Director, Principal or HOD can access delegated task management." }, { status: 403 });
+
     const query = admin.from("action_items").select("*").order("due_date", { ascending: true, nullsFirst: false }).order("created_at", { ascending: false });
-    const { data: tasks, error } = view === "delegated"
-      ? await query.eq("created_by", profile.id)
-      : await query.eq("assignee_id", profile.id);
+    const { data: tasks, error } = view === "delegated" ? await query.eq("created_by", profile.id) : await query.eq("assignee_id", profile.id);
     if (error) throw error;
 
     const rows = tasks ?? [];
@@ -27,30 +27,11 @@ export async function GET(request: Request) {
 
     const meetingMap = new Map((meetings ?? []).map(item => [item.id, item]));
     const userMap = new Map((users ?? []).map(item => [item.id, item]));
-    const reportRows = reports ?? [];
-    const reportsWithLinks = await Promise.all(reportRows.map(async report => {
-      const { data } = await admin.storage.from("task-reports").createSignedUrl(report.file_path, 60 * 30);
-      return { ...report, download_url: data?.signedUrl ?? null };
-    }));
+    const reportsWithLinks = await Promise.all((reports ?? []).map(async report => { const { data } = await admin.storage.from("task-reports").createSignedUrl(report.file_path, 60 * 30); return { ...report, download_url: data?.signedUrl ?? null }; }));
     const reportsByTask = new Map<string, any[]>();
-    for (const report of reportsWithLinks) {
-      const list = reportsByTask.get(report.action_item_id) ?? [];
-      list.push(report);
-      reportsByTask.set(report.action_item_id, list);
-    }
+    for (const report of reportsWithLinks) { const list = reportsByTask.get(report.action_item_id) ?? []; list.push(report); reportsByTask.set(report.action_item_id, list); }
 
-    return NextResponse.json({
-      data: rows.map(row => ({
-        ...row,
-        meeting: meetingMap.get(row.meeting_id) ?? null,
-        assignee: userMap.get(row.assignee_id) ?? null,
-        creator: userMap.get(row.created_by) ?? null,
-        reports: reportsByTask.get(row.id) ?? [],
-      })),
-      view,
-      canAssign: ASSIGNERS.includes(profile.role as typeof ASSIGNERS[number]),
-      currentUserId: profile.id,
-    });
+    return NextResponse.json({ data: rows.map(row => ({ ...row, meeting: meetingMap.get(row.meeting_id) ?? null, assignee: userMap.get(row.assignee_id) ?? null, creator: userMap.get(row.created_by) ?? null, reports: reportsByTask.get(row.id) ?? [] })), view, canAssign: ASSIGNERS.includes(profile.role as typeof ASSIGNERS[number]), currentUserId: profile.id });
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHORIZED") return NextResponse.json({ error: "Authentication required." }, { status: 401 });
     return NextResponse.json({ error: "Unable to load tasks." }, { status: 500 });

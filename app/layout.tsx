@@ -8,6 +8,11 @@ export const metadata: Metadata = {
   description: "AI-powered institutional governance platform for meetings, events, policies, decisions and action items.",
   applicationName: "GovAI",
   themeColor: "#06131b",
+  viewport: {
+    width: "device-width",
+    initialScale: 1,
+    viewportFit: "cover",
+  },
   appleWebApp: {
     capable: true,
     title: "GovAI",
@@ -19,7 +24,6 @@ export default function Layout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
         <meta name="theme-color" content="#06131b" />
       </head>
       <body>

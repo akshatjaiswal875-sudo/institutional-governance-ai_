@@ -3,17 +3,18 @@ import { requireUser } from "@/lib/auth";
 import { recordAudit } from "@/lib/audit";
 
 const statuses = ["Pending", "In Progress", "Completed"] as const;
-const DECISION_MANAGERS = ["Director", "Principal", "HOD", "Coordinator", "Super Admin", "Meeting Secretary", "Faculty / Officer"] as const;
+const DECISION_MANAGERS = ["Director", "Principal", "HOD", "Coordinator"] as const;
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   try {
     const { supabase, profile } = await requireUser([...DECISION_MANAGERS]);
-    const body = await request.json();
-    const decisionText = typeof body.decisionText === "string" ? body.decisionText.trim() : "";
-    const actionItem = typeof body.actionItem === "string" ? body.actionItem.trim() : null;
-    const assigneeId = typeof body.assigneeId === "string" && body.assigneeId ? body.assigneeId : null;
-    const dueDate = typeof body.dueDate === "string" && body.dueDate ? body.dueDate : null;
-    const status = statuses.includes(body.status) ? body.status : "Pending";
+    const body: unknown = await request.json();
+    const input = body && typeof body === "object" ? body as Record<string, unknown> : {};
+    const decisionText = typeof input.decisionText === "string" ? input.decisionText.trim() : "";
+    const actionItem = typeof input.actionItem === "string" ? input.actionItem.trim() : null;
+    const assigneeId = typeof input.assigneeId === "string" && input.assigneeId ? input.assigneeId : null;
+    const dueDate = typeof input.dueDate === "string" && input.dueDate ? input.dueDate : null;
+    const status = statuses.includes(input.status as (typeof statuses)[number]) ? input.status as (typeof statuses)[number] : "Pending";
     if (!decisionText) return NextResponse.json({ error: "Decision text is required." }, { status: 400 });
 
     const [{ data: meeting }, { data: minute }] = await Promise.all([
@@ -23,7 +24,21 @@ export async function POST(request: Request, { params }: { params: { id: string 
     if (!meeting) return NextResponse.json({ error: "Meeting not found." }, { status: 404 });
     if (!minute) return NextResponse.json({ error: "Add minutes before adding a decision." }, { status: 400 });
 
-    const { data, error } = await supabase.from("decisions").insert({ meeting_id: params.id, minute_id: minute.id, decision_text: decisionText, action_item: actionItem, assignee_id: assigneeId, due_date: dueDate, status }).select("id").single();
+    if (assigneeId) {
+      const { data: assignee, error: assigneeError } = await supabase
+        .from("users")
+        .select("id, deleted_at")
+        .eq("id", assigneeId)
+        .maybeSingle();
+      if (assigneeError) return NextResponse.json({ error: assigneeError.message }, { status: 400 });
+      if (!assignee || assignee.deleted_at) return NextResponse.json({ error: "The selected assignee is not an active user." }, { status: 400 });
+    }
+
+    const { data, error } = await supabase
+      .from("decisions")
+      .insert({ meeting_id: params.id, minute_id: minute.id, decision_text: decisionText, action_item: actionItem, assignee_id: assigneeId, due_date: dueDate, status })
+      .select("id")
+      .single();
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
     await recordAudit(supabase, profile.id, "ADD_DECISION", "decisions", data.id, { meeting_id: params.id, status });
     return NextResponse.json({ data }, { status: 201 });

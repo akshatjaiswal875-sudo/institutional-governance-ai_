@@ -26,6 +26,11 @@ export async function POST(request: Request, { params }: { params: { id: string 
     if (meetingError) throw meetingError;
     if (!meeting) return NextResponse.json({ error: "Meeting not found." }, { status: 404 });
 
+    const organizer = Array.isArray(meeting.users) ? meeting.users[0] : meeting.users;
+    if (!organizer?.email) {
+      return NextResponse.json({ error: "The meeting organizer email could not be found." }, { status: 500 });
+    }
+
     const { data: participant, error: participantError } = await supabase
       .from("participants")
       .select("id,attendance_status")
@@ -45,25 +50,25 @@ export async function POST(request: Request, { params }: { params: { id: string 
       .eq("user_id", profile.id);
     if (updateError) throw updateError;
 
+    try {
+      await sendMeetingDeclineNotification({
+        organizerEmail: organizer.email,
+        participantName: profile.email,
+        participantEmail: profile.email,
+        meetingTitle: meeting.title,
+        meetingId: meeting.id,
+        date: new Intl.DateTimeFormat("en-IN", { dateStyle: "full", timeStyle: "short" }).format(new Date(meeting.date)),
+        reason,
+      });
+    } catch (emailError) {
+      await supabase.from("participants").update({ attendance_status: participant.attendance_status }).eq("id", participant.id).eq("user_id", profile.id);
+      throw emailError;
+    }
+
     await recordAudit(supabase, profile.id, "DECLINE_MEETING", "participants", participant.id, {
       meeting_id: params.id,
       user_id: profile.id,
       attendance_status: "Declined",
-      reason,
-    });
-
-    const organizer = Array.isArray(meeting.users) ? meeting.users[0] : meeting.users;
-    if (!organizer?.email) {
-      return NextResponse.json({ error: "Meeting was declined, but the organizer email could not be found." }, { status: 500 });
-    }
-
-    await sendMeetingDeclineNotification({
-      organizerEmail: organizer.email,
-      participantName: profile.email,
-      participantEmail: profile.email,
-      meetingTitle: meeting.title,
-      meetingId: meeting.id,
-      date: new Intl.DateTimeFormat("en-IN", { dateStyle: "full", timeStyle: "short" }).format(new Date(meeting.date)),
       reason,
     });
 

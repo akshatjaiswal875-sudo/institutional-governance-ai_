@@ -66,6 +66,8 @@ function addSource(sources: AssistantSource[], sourceKeys: Set<string>, parent_t
 export async function POST(req: NextRequest) {
   try {
     const body = schema.parse(await req.json());
+    const { supabase } = await requireUser();
+
     const natural = naturalResponse(body.message);
     if (natural) return ok({ answer: natural, sources: [] });
 
@@ -73,7 +75,6 @@ export async function POST(req: NextRequest) {
       return ok({ answer: IRRELEVANT_MESSAGE, sources: [] });
     }
 
-    const { supabase } = await requireUser();
     const rows: SearchRow[] = [];
     const sourceKeys = new Set<string>();
     const sources: AssistantSource[] = [];
@@ -123,7 +124,6 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Direct case-insensitive lookup makes policy/event questions reliable even when the vector index has no match.
     if (searchTerms.length) {
       const [policyResults, eventResults] = await Promise.all([
         Promise.all(searchTerms.map(async (term) => {
@@ -182,7 +182,6 @@ export async function POST(req: NextRequest) {
       for (const minute of minutes.data ?? []) { addSection(contextParts, `[minutes:${minute.id}] meeting_id=${minute.meeting_id}`, minute.summary); addSection(contextParts, `[minutes:${minute.id}:raw]`, minute.raw_transcript); addSource(sources, sourceKeys, 'minutes', minute.id, { meeting_id: minute.meeting_id, version: minute.version, is_approved: minute.is_approved }); }
     }
 
-    // Keep vector-retrieved policy/event records in context as well.
     const policyIds = unique(rows.filter((row) => row.parent_type === 'policy').map((row) => row.parent_id)).slice(0, 12);
     if (policyIds.length) {
       const { data, error } = await supabase.from('policies').select('id,title,content,version,status,effective_date,updated_at').in('id', policyIds);

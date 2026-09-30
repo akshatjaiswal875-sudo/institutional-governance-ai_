@@ -15,6 +15,16 @@ type UserRow = {
   full_name?: string | null;
 };
 
+function getDisplayName(user: UserRow) {
+  const explicitName = user.name?.trim() || user.full_name?.trim();
+  if (explicitName) return explicitName;
+
+  const localPart = user.email?.split("@")[0]?.replace(/[._-]+/g, " ").trim();
+  if (!localPart) return "Unnamed user";
+
+  return localPart.replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 export function UsersDirectory() {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [query, setQuery] = useState("");
@@ -23,6 +33,7 @@ export function UsersDirectory() {
 
   useEffect(() => {
     let active = true;
+
     fetch("/api/users", { headers: { "Content-Type": "application/json" } })
       .then(async (response) => {
         const result = await response.json();
@@ -48,11 +59,12 @@ export function UsersDirectory() {
     const normalized = query.trim().toLowerCase();
     if (!normalized) return users;
 
-    return users.filter((user) =>
-      [user.name, user.full_name, user.email, user.role, user.department]
+    return users.filter((user) => {
+      const displayName = getDisplayName(user);
+      return [displayName, user.name, user.full_name, user.email, user.role, user.department]
         .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(normalized)),
-    );
+        .some((value) => String(value).toLowerCase().includes(normalized));
+    });
   }, [query, users]);
 
   return (
@@ -75,7 +87,7 @@ export function UsersDirectory() {
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search by name, email, role, or department"
-              aria-label="Search users"
+              aria-label="Search users by name, email, role, or department"
             />
             {query && (
               <button
@@ -119,12 +131,12 @@ export function UsersDirectory() {
                 {filteredUsers.map((user, index) => {
                   const role = user.role ?? "—";
                   const isAllowedRole = allowedRoles.includes(role as (typeof allowedRoles)[number]);
-                  const displayName = user.name ?? user.full_name;
+                  const displayName = getDisplayName(user);
 
                   return (
                     <tr key={user.id ?? user.email ?? index} className="border-t border-slate-200">
                       <td className="px-4 py-4">
-                        {displayName && <p className="font-medium text-slate-800">{displayName}</p>}
+                        <p className="font-medium text-slate-800">{displayName}</p>
                         <p className="break-all text-slate-600">{user.email ?? "Email unavailable"}</p>
                       </td>
                       <td className="px-4 py-4">

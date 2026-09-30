@@ -4,12 +4,94 @@ import { recordAudit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const MEETING_MANAGERS = ["Director", "Principal", "HOD", "Coordinator", "Super Admin", "Meeting Secretary"] as const;
+
+type Profile = {
+  id: string;
+  email: string;
+  role: string;
+  department: string | null;
+};
+
 export async function GET(_request: Request, { params }: { params: { id: string } }) {
-  try { const { supabase } = await requireUser(); const [{ data: meeting }, { data: participants }, { data: agenda }, { data: minutes }, { data: decisions }, { data: actions }] = await Promise.all([supabase.from("meetings").select("*").eq("id", params.id).maybeSingle(), supabase.from("participants").select("id,user_id,attendance_status").eq("meeting_id", params.id), supabase.from("agenda_items").select("*").eq("meeting_id", params.id).order("sort_order"), supabase.from("minutes").select("*").eq("meeting_id", params.id).order("version", { ascending:false }), supabase.from("decisions").select("*").eq("meeting_id", params.id).order("due_date"), supabase.from("action_items").select("*").eq("meeting_id", params.id).order("due_date")]); if (!meeting) return NextResponse.json({ error:"Meeting not found." },{status:404}); const profileIds=[meeting.created_by,meeting.assigned_approver_id,...(participants??[]).map(p=>p.user_id)].filter((id):id is string=>Boolean(id)); const admin=createAdminClient(); const {data:profiles}=profileIds.length?await admin.from("users").select("id,email,role,department").in("id",profileIds):{data:[]}; const profileById=new Map((profiles??[]).map(p=>[p.id,p])); return NextResponse.json({data:{meeting:{...meeting,creator:profileById.get(meeting.created_by)??null,assigned_approver:meeting.assigned_approver_id?profileById.get(meeting.assigned_approver_id)??null:null},participants:(participants??[]).map(p=>({...p,users:profileById.get(p.user_id)??null})),agenda:agenda??[],minutes:minutes??[],decisions:decisions??[],actions:actions??[]}}); }
-  catch(error){ if(error instanceof Error&&error.message==="UNAUTHORIZED") return NextResponse.json({error:"Authentication required."},{status:401}); return NextResponse.json({error:"Unable to load meeting."},{status:500}); }
+  try {
+    const { supabase } = await requireUser();
+    const [{ data: meeting }, { data: participants }, { data: agenda }, { data: minutes }, { data: decisions }, { data: actions }] = await Promise.all([
+      supabase.from("meetings").select("*").eq("id", params.id).maybeSingle(),
+      supabase.from("participants").select("id,user_id,attendance_status").eq("meeting_id", params.id),
+      supabase.from("agenda_items").select("*").eq("meeting_id", params.id).order("sort_order"),
+      supabase.from("minutes").select("*").eq("meeting_id", params.id).order("version", { ascending: false }),
+      supabase.from("decisions").select("*").eq("meeting_id", params.id).order("due_date"),
+      supabase.from("action_items").select("*").eq("meeting_id", params.id).order("due_date"),
+    ]);
+
+    if (!meeting) return NextResponse.json({ error: "Meeting not found." }, { status: 404 });
+
+    const profileIds = [meeting.created_by, meeting.assigned_approver_id, ...(participants ?? []).map((p) => p.user_id)].filter(
+      (id): id is string => Boolean(id),
+    );
+
+    const admin = createAdminClient();
+    const { data: profiles } = profileIds.length
+      ? await admin.from("users").select("id,email,role,department").in("id", profileIds)
+      : { data: [] as Profile[] };
+
+    const profileById = new Map<string, Profile>((profiles ?? []).map((p: Profile) => [p.id, p]));
+
+    return NextResponse.json({
+      data: {
+        meeting: {
+          ...meeting,
+          creator: profileById.get(meeting.created_by) ?? null,
+          assigned_approver: meeting.assigned_approver_id ? profileById.get(meeting.assigned_approver_id) ?? null : null,
+        },
+        participants: (participants ?? []).map((p) => ({ ...p, users: profileById.get(p.user_id) ?? null })),
+        agenda: agenda ?? [],
+        minutes: minutes ?? [],
+        decisions: decisions ?? [],
+        actions: actions ?? [],
+      },
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "UNAUTHORIZED") {
+      return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    }
+    return NextResponse.json({ error: "Unable to load meeting." }, { status: 500 });
+  }
 }
-export async function PATCH(request: Request,{params}:{params:{id:string}}){
-  try { const {supabase,profile}=await requireUser([...MEETING_MANAGERS]); const body=await request.json(); const payload={title:typeof body.title==="string"?body.title.trim():undefined,date:typeof body.date==="string"?body.date:undefined,location:typeof body.location==="string"?body.location.trim()||null:undefined,type:body.type==="online"||body.type==="offline"?body.type:undefined,assigned_approver_id:typeof body.assignedApproverId==="string"?body.assignedApproverId||null:undefined}; if(!payload.title||!payload.date)return NextResponse.json({error:"Title and date are required."},{status:400}); const {data,error}=await supabase.from("meetings").update(payload).eq("id",params.id).select("*").single(); if(error)return NextResponse.json({error:error.message},{status:400}); await recordAudit(supabase,profile.id,"UPDATE_MEETING","meetings",params.id,{...payload,role:profile.role}); return NextResponse.json({data}); }
-  catch(error){ if(error instanceof Error&&error.message==="UNAUTHORIZED")return NextResponse.json({error:"Authentication required."},{status:401}); if(error instanceof Error&&error.message==="FORBIDDEN")return NextResponse.json({error:"You do not have permission to update meetings."},{status:403}); return NextResponse.json({error:"Unable to update meeting."},{status:500}); }
+
+export async function PATCH(request: Request, { params }: { params: { id: string } }) {
+  try {
+    const { supabase, profile } = await requireUser([...MEETING_MANAGERS]);
+    const body = await request.json();
+    const payload = {
+      title: typeof body.title === "string" ? body.title.trim() : undefined,
+      date: typeof body.date === "string" ? body.date : undefined,
+      location: typeof body.location === "string" ? body.location.trim() || null : undefined,
+      type: body.type === "online" || body.type === "offline" ? body.type : undefined,
+      assigned_approver_id: typeof body.assignedApproverId === "string" ? body.assignedApproverId || null : undefined,
+    };
+    if (!payload.title || !payload.date) return NextResponse.json({ error: "Title and date are required." }, { status: 400 });
+    const { data, error } = await supabase.from("meetings").update(payload).eq("id", params.id).select("*").single();
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    await recordAudit(supabase, profile.id, "UPDATE_MEETING", "meetings", params.id, { ...payload, role: profile.role });
+    return NextResponse.json({ data });
+  } catch (error) {
+    if (error instanceof Error && error.message === "UNAUTHORIZED") return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    if (error instanceof Error && error.message === "FORBIDDEN") return NextResponse.json({ error: "You do not have permission to update meetings." }, { status: 403 });
+    return NextResponse.json({ error: "Unable to update meeting." }, { status: 500 });
+  }
 }
-export async function DELETE(_request:Request,{params}:{params:{id:string}}){ try{const {supabase,profile}=await requireUser(["Director","Super Admin"]); const {error}=await supabase.from("meetings").delete().eq("id",params.id); if(error)return NextResponse.json({error:error.message},{status:400}); await recordAudit(supabase,profile.id,"DELETE_MEETING","meetings",params.id); return NextResponse.json({success:true});}catch(error){if(error instanceof Error&&error.message==="UNAUTHORIZED")return NextResponse.json({error:"Authentication required."},{status:401});if(error instanceof Error&&error.message==="FORBIDDEN")return NextResponse.json({error:"Only Director can delete meetings."},{status:403});return NextResponse.json({error:"Unable to delete meeting."},{status:500});}}
+
+export async function DELETE(_request: Request, { params }: { params: { id: string } }) {
+  try {
+    const { supabase, profile } = await requireUser(["Director", "Super Admin"]);
+    const { error } = await supabase.from("meetings").delete().eq("id", params.id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    await recordAudit(supabase, profile.id, "DELETE_MEETING", "meetings", params.id);
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    if (error instanceof Error && error.message === "UNAUTHORIZED") return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    if (error instanceof Error && error.message === "FORBIDDEN") return NextResponse.json({ error: "Only Director can delete meetings." }, { status: 403 });
+    return NextResponse.json({ error: "Unable to delete meeting." }, { status: 500 });
+  }
+}

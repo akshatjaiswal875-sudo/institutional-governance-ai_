@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { recordAudit } from "@/lib/audit";
 
 const EVENT_CREATORS = ["Director", "Principal", "HOD", "Coordinator", "Super Admin"] as const;
 const EVENT_STATUSES = ["Draft", "Under Review", "Approved", "Published", "Upcoming", "Ongoing", "Completed", "Cancelled"] as const;
+const EVENT_LEADERS = ["Director", "Principal", "HOD", "Coordinator", "Super Admin"] as const;
 
 function canSetStatus(role: string, status: string) {
   if (["Director", "Super Admin"].includes(role)) return true;
@@ -14,11 +16,24 @@ function canSetStatus(role: string, status: string) {
 
 export async function GET() {
   try {
-    const { supabase } = await requireUser();
-    const { data, error } = await supabase.from("events").select("id,title,start_time,end_time,description,location,organizer_id,status").order("start_time", { ascending: true });
+    const { user, profile } = await requireUser();
+    const admin = createAdminClient();
+    const base = admin
+      .from("events")
+      .select("id,title,start_time,end_time,description,location,organizer_id,status")
+      .order("start_time", { ascending: true });
+
+    const { data, error } = EVENT_LEADERS.includes(profile.role as typeof EVENT_LEADERS[number])
+      ? await base
+      : await base.eq("status", "Published");
+
     if (error) throw error;
     return NextResponse.json({ data: data ?? [] }, { status: 200 });
-  } catch { return NextResponse.json({ error: "Unable to load events." }, { status: 401 }); }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unable to load events.";
+    const status = message === "UNAUTHORIZED" || message === "PROFILE_NOT_FOUND" ? 401 : 500;
+    return NextResponse.json({ error: status === 401 ? "Unauthorized." : "Unable to load events." }, { status });
+  }
 }
 
 export async function POST(request: Request) {
@@ -36,5 +51,9 @@ export async function POST(request: Request) {
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
     await recordAudit(supabase, profile.id, "CREATE_EVENT", "events", data.id, { title, status: requestedStatus, creator_role: profile.role });
     return NextResponse.json({ data }, { status: 201 });
-  } catch { return NextResponse.json({ error: "Unable to create event." }, { status: 401 }); }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unable to create event.";
+    const status = message === "UNAUTHORIZED" || message === "PROFILE_NOT_FOUND" ? 401 : message === "FORBIDDEN" ? 403 : 500;
+    return NextResponse.json({ error: status === 401 ? "Unauthorized." : status === 403 ? "Forbidden." : "Unable to create event." }, { status });
+  }
 }

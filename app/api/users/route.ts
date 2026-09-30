@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { recordAudit } from "@/lib/audit";
 
-const roles = ["Super Admin", "Meeting Secretary", "Faculty / Officer", "Member", "Auditor", "Director", "Principal", "HOD", "Coordinator", "Faculty / Volunteers"] as const;
+const roles = ["Super Admin", "Meeting Secretary", "Faculty / Officer", "Member", "Auditor", "Director", "Principal", "HOD", "Coordinators", "Faculty / Volunteers"] as const;
 const USER_ADMINS = ["Director", "Super Admin"] as const;
 
 export async function GET() {

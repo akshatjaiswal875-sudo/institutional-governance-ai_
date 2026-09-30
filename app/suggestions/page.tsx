@@ -160,7 +160,7 @@ export default function SuggestionsPage() {
                       {tagList(item).map((tag) => (
                         <a
                           key={`${tag.type}:${tag.id}`}
-                          href={`/${tag.type === "policy" ? "policies" : "events"}/${tag.customId}`}
+                          href={`/${tag.type === "policy" ? "policies" : "events"}/${tag.id}`}
                           className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-800 hover:bg-indigo-100"
                           title={tag.title}
                         >

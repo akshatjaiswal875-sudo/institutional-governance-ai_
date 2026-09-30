@@ -14,10 +14,9 @@ type NotificationRow = {
 
 function getNotificationHref(row: NotificationRow) {
   if (!row.target_table || !row.target_id) return null;
-
   switch (row.target_table) {
     case "meetings":
-      return `/meetings/${row.target_id}`;
+      return `/meetings/${row.target_id}/join`;
     case "policies":
       return `/policies/${row.target_id}`;
     case "action_items":
@@ -53,10 +52,7 @@ export async function GET() {
 
     return NextResponse.json({ data: notifications });
   } catch (error) {
-    if (error instanceof Error && error.message === "UNAUTHORIZED") {
-      return NextResponse.json({ error: "Authentication required." }, { status: 401 });
-    }
-
+    if (error instanceof Error && error.message === "UNAUTHORIZED") return NextResponse.json({ error: "Authentication required." }, { status: 401 });
     console.error("GET /api/notifications failed:", error);
     return NextResponse.json({ error: "Unable to load notifications." }, { status: 500 });
   }
@@ -67,10 +63,7 @@ export async function PATCH(request: NextRequest) {
     const { supabase, user } = await requireUser();
     const body = await request.json();
     const id = typeof body.id === "string" ? body.id : "";
-
-    if (!id) {
-      return NextResponse.json({ error: "Notification id is required." }, { status: 400 });
-    }
+    if (!id) return NextResponse.json({ error: "Notification id is required." }, { status: 400 });
 
     const { data, error } = await supabase
       .from("notifications")
@@ -79,14 +72,10 @@ export async function PATCH(request: NextRequest) {
       .eq("user_id", user.id)
       .select("id,read_at")
       .single();
-
     if (error) throw error;
     return NextResponse.json({ data });
   } catch (error) {
-    if (error instanceof Error && error.message === "UNAUTHORIZED") {
-      return NextResponse.json({ error: "Authentication required." }, { status: 401 });
-    }
-
+    if (error instanceof Error && error.message === "UNAUTHORIZED") return NextResponse.json({ error: "Authentication required." }, { status: 401 });
     console.error("PATCH /api/notifications failed:", error);
     return NextResponse.json({ error: "Unable to update notification." }, { status: 500 });
   }

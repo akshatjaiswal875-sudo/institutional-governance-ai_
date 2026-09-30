@@ -1,0 +1,211 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  DIRECTOR
+  PRINCIPAL
+  HOD
+  COORDINATOR
+  FACULTY
+}
+
+enum PolicyStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum EventStatus {
+  UPCOMING
+  ONGOING
+  COMPLETED
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  VERSION_CREATED
+  RESTORE
+  STATUS_CHANGE
+  ARCHIVE
+}
+
+enum AuditEntityType {
+  POLICY
+  EVENT
+  MEETING
+  SUGGESTION
+}
+
+model User {
+  id                 String               @id @default(uuid()) @db.Uuid
+  email              String               @unique
+  name               String?
+  role               Role
+  department         String?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  deletedAt          DateTime?
+  policiesCreated    PolicyVersion[]      @relation("PolicyVersionCreator")
+  policiesUpdated    Policy[]             @relation("PolicyUpdater")
+  eventsOrganized    Event[]              @relation("EventOrganizer")
+  meetingsCreated    Meeting[]            @relation("MeetingCreator")
+  suggestions        Suggestion[]         @relation("SuggestionAuthor")
+  auditLogs          AuditLog[]           @relation("AuditActor")
+  assignedTasks      Meeting[]            @relation("MeetingAssignee")
+
+  @@index([role])
+  @@index([department])
+  @@index([deletedAt])
+  @@map("users")
+}
+
+model Counter {
+  key       String   @id
+  value     BigInt   @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@map("counters")
+}
+
+model Policy {
+  id              String          @id @default(uuid()) @db.Uuid
+  customId        String          @unique
+  status          PolicyStatus    @default(DRAFT)
+  currentVersionId String?        @unique @db.Uuid
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  deletedAt       DateTime?
+  updatedById     String?         @db.Uuid
+  currentVersion  PolicyVersion?  @relation("CurrentPolicyVersion", fields: [currentVersionId], references: [id], onDelete: Restrict)
+  versions        PolicyVersion[] @relation("PolicyVersions")
+  updatedBy       User?           @relation("PolicyUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+  suggestionTags  SuggestionPolicyTag[]
+
+  @@index([status])
+  @@index([deletedAt])
+  @@index([updatedById])
+  @@map("policies")
+}
+
+model PolicyVersion {
+  id            String   @id @default(uuid()) @db.Uuid
+  policyId      String   @db.Uuid
+  versionNumber Int
+  title         String
+  content       String
+  changeSummary String?  @db.VarChar(280)
+  createdById   String   @db.Uuid
+  createdAt     DateTime @default(now())
+  policy        Policy   @relation("PolicyVersions", fields: [policyId], references: [id], onDelete: Cascade)
+  currentFor    Policy?  @relation("CurrentPolicyVersion")
+  createdBy     User     @relation("PolicyVersionCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@unique([policyId, versionNumber])
+  @@index([policyId, createdAt])
+  @@index([createdById])
+  @@map("policy_versions")
+}
+
+model Event {
+  id             String   @id @default(uuid()) @db.Uuid
+  customId       String   @unique
+  title          String
+  description    String?
+  startDate      DateTime
+  endDate        DateTime
+  location       String?
+  organizerId    String   @db.Uuid
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  deletedAt      DateTime?
+  organizer      User     @relation("EventOrganizer", fields: [organizerId], references: [id], onDelete: Restrict)
+  suggestionTags SuggestionEventTag[]
+
+  @@index([startDate, endDate])
+  @@index([organizerId])
+  @@index([deletedAt])
+  @@map("events")
+}
+
+model Meeting {
+  id          String    @id @default(uuid()) @db.Uuid
+  title       String
+  scheduledAt DateTime?
+  location    String?
+  createdById String    @db.Uuid
+  assigneeId  String?   @db.Uuid
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  creator     User      @relation("MeetingCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  assignee    User?     @relation("MeetingAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+
+  @@index([createdById])
+  @@index([assigneeId])
+  @@index([scheduledAt])
+  @@index([deletedAt])
+  @@map("meetings")
+}
+
+model Suggestion {
+  id           String               @id @default(uuid()) @db.Uuid
+  title        String
+  content      String
+  createdById  String               @db.Uuid
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+  deletedAt    DateTime?
+  createdBy    User                 @relation("SuggestionAuthor", fields: [createdById], references: [id], onDelete: Restrict)
+  policyTags   SuggestionPolicyTag[]
+  eventTags    SuggestionEventTag[]
+
+  @@index([createdById])
+  @@index([createdAt])
+  @@index([deletedAt])
+  @@map("suggestions")
+}
+
+model SuggestionPolicyTag {
+  suggestionId String     @db.Uuid
+  policyId     String     @db.Uuid
+  suggestion   Suggestion @relation(fields: [suggestionId], references: [id], onDelete: Cascade)
+  policy       Policy     @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@id([suggestionId, policyId])
+  @@index([policyId])
+  @@map("suggestion_policy_tags")
+}
+
+model SuggestionEventTag {
+  suggestionId String     @db.Uuid
+  eventId      String     @db.Uuid
+  suggestion   Suggestion @relation(fields: [suggestionId], references: [id], onDelete: Cascade)
+  event        Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@id([suggestionId, eventId])
+  @@index([eventId])
+  @@map("suggestion_event_tags")
+}
+
+model AuditLog {
+  id         String          @id @default(uuid()) @db.Uuid
+  entityType AuditEntityType
+  entityId   String          @db.Uuid
+  action     AuditAction
+  actorId    String          @db.Uuid
+  metadata   Json?
+  createdAt  DateTime        @default(now())
+  actor      User            @relation("AuditActor", fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([entityType, entityId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([action, createdAt])
+  @@map("audit_logs")
+}

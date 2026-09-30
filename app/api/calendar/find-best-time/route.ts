@@ -23,6 +23,7 @@ type Candidate = {
   score: number;
   reason: string;
 };
+type AIRankingItem = { score?: number; reason?: string; index?: number };
 
 function clampDuration(value: unknown) {
   const n = Number(value);
@@ -99,8 +100,8 @@ async function rankWithAI(candidates: Candidate[], users: UserRow[]) {
         config: { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 1200 },
       });
       const parsed = JSON.parse(response.text || "{}");
-      const ranking = Array.isArray(parsed.ranking) ? parsed.ranking : [];
-      const byIndex = new Map(ranking.map((item: any) => [Number(item.index), item]));
+      const ranking: AIRankingItem[] = Array.isArray(parsed.ranking) ? parsed.ranking : [];
+      const byIndex = new Map<number, AIRankingItem>(ranking.map((item) => [Number(item.index), item]));
       return {
         candidates: candidates.map((slot, index) => {
           const aiItem = byIndex.get(index);
@@ -181,23 +182,28 @@ export async function POST(request: Request) {
         const end = candidateDateTime(dateString, endMinutes);
         const startEpoch = start.getTime();
         const endEpoch = end.getTime();
-        if (endEpoch <= nowEpoch) continue;
-        const allAvailable = users.every(user => {
-          const rows = (availabilityByUser.get(user.id) ?? []).filter(row => Number(row.day_of_week) === weekday);
-          return insideAvailability(minutes, endMinutes, rows) && !overlaps(startEpoch, endEpoch, busy.filter(item => item.user_id === user.id));
-        });
+        if (startEpoch <= nowEpoch) continue;
+
+        let availableCount = 0;
+        let allAvailable = true;
+        for (const user of users) {
+          const userAvailability = (availabilityByUser.get(user.id) ?? []).filter(row => row.day_of_week === weekday);
+          const isAvailable = insideAvailability(minutes, endMinutes, userAvailability) && !overlaps(startEpoch, endEpoch, busy.filter(item => item.user_id === user.id));
+          if (isAvailable) availableCount += 1;
+          else allAvailable = false;
+        }
         if (!allAvailable) continue;
-        const base = { start: start.toISOString(), end: end.toISOString(), startEpoch, endEpoch, availableCount: users.length, participantCount: users.length };
-        candidates.push({ ...base, score: scoreCandidate(base, busy), reason: "All selected participants are available." });
+
+        const base = { start: start.toISOString(), end: end.toISOString(), startEpoch, endEpoch, availableCount, participantCount: users.length };
+        const score = scoreCandidate(base, busy.filter(item => users.some(user => user.id === item.user_id)));
+        candidates.push({ ...base, score, reason: "All selected participants are available during this slot." });
       }
     }
 
     const ranked = await rankWithAI(candidates, users);
-    const publicCandidates = ranked.candidates.slice(0, 8).map(({ startEpoch: _startEpoch, endEpoch: _endEpoch, ...slot }) => slot);
-    return NextResponse.json({ data: { recommended: publicCandidates[0] ?? null, alternatives: publicCandidates.slice(1), provider: ranked.provider, searchedFrom: startDate, searchedUntil: endDate, durationMinutes, participantCount: users.length, requestedBy: profile.email } }, { status: 200 });
+    return NextResponse.json({ candidates: ranked.candidates.slice(0, 10), provider: ranked.provider, participants: users.map(user => ({ id: user.id, email: user.email, role: user.role, department: user.department })) });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to find a common free time.";
-    const status = message === "UNAUTHORIZED" ? 401 : message === "FORBIDDEN" || message === "PROFILE_NOT_FOUND" ? 403 : 500;
-    return NextResponse.json({ error: status === 401 ? "Authentication required." : status === 403 ? "You are not allowed to use meeting scheduling." : "Unable to find a common free time." }, { status });
+    console.error("find-best-time error", error);
+    return NextResponse.json({ error: "Unable to calculate meeting availability." }, { status: 500 });
   }
 }

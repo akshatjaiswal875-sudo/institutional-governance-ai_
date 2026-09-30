@@ -1,2 +1,5 @@
-import { UsersView } from "@/components/phase1-live";
-export default function UsersPage() { return <UsersView />; }
+import { UsersDirectory } from "@/components/users-directory";
+
+export default function UsersPage() {
+  return <UsersDirectory />;
+}

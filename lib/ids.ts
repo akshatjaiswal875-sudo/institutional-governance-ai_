@@ -53,12 +53,19 @@ export async function generateCustomId(
 ): Promise<string> {
   const key = COUNTER_KEYS[entity];
 
-  const counter = await prisma.counter.upsert({
-    where: { key },
-    create: { key, value: 1n },
-    update: { value: { increment: 1n } },
-    select: { value: true },
-  });
+  const rows = await prisma.$queryRaw<Array<{ value: bigint }>>`
+    INSERT INTO counters (key, value, "updatedAt")
+    VALUES (${key}, 1, NOW())
+    ON CONFLICT (key)
+    DO UPDATE SET value = counters.value + 1, "updatedAt" = NOW()
+    RETURNING value
+  `;
 
-  return formatCustomId(entity, counter.value);
+  const value = rows[0]?.value;
+
+  if (value === undefined) {
+    throw new Error("Unable to allocate a custom ID.");
+  }
+
+  return formatCustomId(entity, value);
 }

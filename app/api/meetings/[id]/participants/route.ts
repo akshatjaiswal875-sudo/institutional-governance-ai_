@@ -3,120 +3,16 @@ import { requireUser } from "@/lib/auth";
 import { recordAudit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 
+const MEETING_MANAGERS = ["Director", "Principal", "HOD", "Coordinator", "Super Admin", "Meeting Secretary"] as const;
 export async function GET(_request: Request, { params }: { params: { id: string } }) {
-	try {
-		const { supabase, profile } = await requireUser();
-		const admin = createAdminClient();
-		const { data: meeting, error: meetingError } = await supabase.from("meetings").select("id").eq("id", params.id).maybeSingle();
-		if (meetingError) throw meetingError;
-		if (!meeting) return NextResponse.json({ error: "Meeting not found." }, { status: 404 });
-		if (profile.role === "Super Admin" || profile.role === "Meeting Secretary") {
-			const { data: users, error: usersError } = await admin.from("users").select("id,email,role,department").order("email");
-			if (usersError) throw usersError;
-			return NextResponse.json({ data: { users: users ?? [], currentRole: profile.role } });
-		}
-		return NextResponse.json({ data: { users: [{ id: profile.id, email: profile.email, role: profile.role, department: profile.department }], currentRole: profile.role } });
-	} catch (error) {
-		if (error instanceof Error && error.message === "UNAUTHORIZED") return NextResponse.json({ error: "Authentication required." }, { status: 401 });
-		return NextResponse.json({ error: "Unable to load participant options." }, { status: 500 });
-	}
+  try { const { supabase, profile } = await requireUser(); const admin = createAdminClient(); const { data: meeting, error: meetingError } = await supabase.from("meetings").select("id").eq("id", params.id).maybeSingle(); if (meetingError) throw meetingError; if (!meeting) return NextResponse.json({ error: "Meeting not found." }, { status: 404 }); if (MEETING_MANAGERS.includes(profile.role as typeof MEETING_MANAGERS[number])) { const { data: users, error: usersError } = await admin.from("users").select("id,email,role,department").order("email"); if (usersError) throw usersError; return NextResponse.json({ data: { users: users ?? [], currentRole: profile.role } }); } return NextResponse.json({ data: { users: [{ id: profile.id, email: profile.email, role: profile.role, department: profile.department }], currentRole: profile.role } }); }
+  catch (error) { if (error instanceof Error && error.message === "UNAUTHORIZED") return NextResponse.json({ error: "Authentication required." }, { status: 401 }); return NextResponse.json({ error: "Unable to load participant options." }, { status: 500 }); }
 }
-
-export async function POST(
-	request: Request,
-	{ params }: { params: { id: string } },
-) {
-	try {
-		const { supabase, profile } = await requireUser([
-			"Super Admin",
-			"Meeting Secretary",
-		]);
-		const body = await request.json();
-		const userId = typeof body.userId === "string" ? body.userId.trim() : "";
-		const attendanceStatus =
-			typeof body.attendanceStatus === "string" && body.attendanceStatus.trim()
-				? body.attendanceStatus.trim()
-				: "Invited";
-		if (!userId) {
-			return NextResponse.json({ error: "Participant is required." }, { status: 400 });
-		}
-
-		const admin = createAdminClient();
-		const { data: user, error: userError } = await admin
-			.from("users")
-			.select("id,email,role,department")
-			.eq("id", userId)
-			.maybeSingle();
-		if (userError) throw userError;
-		if (!user) return NextResponse.json({ error: "Selected participant was not found." }, { status: 400 });
-
-		const { data: meeting } = await supabase
-			.from("meetings")
-			.select("id")
-			.eq("id", params.id)
-			.maybeSingle();
-		if (!meeting) {
-			return NextResponse.json({ error: "Meeting not found." }, { status: 404 });
-		}
-
-		const { data: existing, error: existingError } = await supabase
-			.from("participants")
-			.select("id")
-			.eq("meeting_id", params.id)
-			.eq("user_id", userId)
-			.maybeSingle();
-		if (existingError) throw existingError;
-		if (existing) return NextResponse.json({ error: "That participant is already added." }, { status: 409 });
-
-		const { data, error } = await supabase
-			.from("participants")
-			.insert({
-				meeting_id: params.id,
-				user_id: userId,
-				attendance_status: attendanceStatus,
-			})
-			.select("id")
-			.single();
-		if (error) {
-			return NextResponse.json({ error: error.message }, { status: 400 });
-		}
-		await recordAudit(supabase, profile.id, "ADD_PARTICIPANT", "participants", data.id, {
-			meeting_id: params.id,
-			user_id: userId,
-			attendance_status: attendanceStatus,
-		});
-		return NextResponse.json({ data }, { status: 201 });
-	} catch (error) {
-		if (error instanceof Error && error.message === "UNAUTHORIZED") return NextResponse.json({ error: "Authentication required." }, { status: 401 });
-		if (error instanceof Error && error.message === "FORBIDDEN") return NextResponse.json({ error: "You do not have permission to manage participants." }, { status: 403 });
-		return NextResponse.json({ error: "Unable to add participant." }, { status: 500 });
-	}
+export async function POST(request: Request, { params }: { params: { id: string } }) {
+  try { const { supabase, profile } = await requireUser([...MEETING_MANAGERS]); const body = await request.json(); const userId = typeof body.userId === "string" ? body.userId.trim() : ""; const attendanceStatus = typeof body.attendanceStatus === "string" && body.attendanceStatus.trim() ? body.attendanceStatus.trim() : "Invited"; if (!userId) return NextResponse.json({ error: "Participant is required." }, { status: 400 }); const admin = createAdminClient(); const { data: user, error: userError } = await admin.from("users").select("id,email,role,department").eq("id", userId).maybeSingle(); if (userError) throw userError; if (!user) return NextResponse.json({ error: "Selected participant was not found." }, { status: 400 }); const { data: meeting } = await supabase.from("meetings").select("id").eq("id", params.id).maybeSingle(); if (!meeting) return NextResponse.json({ error: "Meeting not found." }, { status: 404 }); const { data: existing, error: existingError } = await supabase.from("participants").select("id").eq("meeting_id", params.id).eq("user_id", userId).maybeSingle(); if (existingError) throw existingError; if (existing) return NextResponse.json({ error: "That participant is already added." }, { status: 409 }); const { data, error } = await supabase.from("participants").insert({ meeting_id: params.id, user_id: userId, attendance_status: attendanceStatus }).select("id").single(); if (error) return NextResponse.json({ error: error.message }, { status: 400 }); await recordAudit(supabase, profile.id, "ADD_PARTICIPANT", "participants", data.id, { meeting_id: params.id, user_id: userId, attendance_status: attendanceStatus }); return NextResponse.json({ data }, { status: 201 }); }
+  catch (error) { if (error instanceof Error && error.message === "UNAUTHORIZED") return NextResponse.json({ error: "Authentication required." }, { status: 401 }); if (error instanceof Error && error.message === "FORBIDDEN") return NextResponse.json({ error: "You do not have permission to manage participants." }, { status: 403 }); return NextResponse.json({ error: "Unable to add participant." }, { status: 500 }); }
 }
-
 export async function DELETE(request: Request, { params }: { params: { id: string } }) {
-	try {
-		const { supabase, profile } = await requireUser(["Super Admin", "Meeting Secretary"]);
-		const body = await request.json();
-		const participantId = typeof body.participantId === "string" ? body.participantId.trim() : "";
-		if (!participantId) return NextResponse.json({ error: "Participant is required." }, { status: 400 });
-
-		const { data: meeting } = await supabase.from("meetings").select("id").eq("id", params.id).maybeSingle();
-		if (!meeting) return NextResponse.json({ error: "Meeting not found." }, { status: 404 });
-		const { data: participant, error: participantError } = await supabase
-			.from("participants")
-			.select("id,user_id")
-			.eq("id", participantId)
-			.eq("meeting_id", params.id)
-			.maybeSingle();
-		if (participantError) throw participantError;
-		if (!participant) return NextResponse.json({ error: "Participant not found." }, { status: 404 });
-		const { error } = await supabase.from("participants").delete().eq("id", participantId).eq("meeting_id", params.id);
-		if (error) throw error;
-		await recordAudit(supabase, profile.id, "REMOVE_PARTICIPANT", "participants", participantId, { meeting_id: params.id, user_id: participant.user_id });
-		return NextResponse.json({ success: true });
-	} catch (error) {
-		if (error instanceof Error && error.message === "UNAUTHORIZED") return NextResponse.json({ error: "Authentication required." }, { status: 401 });
-		if (error instanceof Error && error.message === "FORBIDDEN") return NextResponse.json({ error: "You do not have permission to manage participants." }, { status: 403 });
-		return NextResponse.json({ error: "Unable to remove participant." }, { status: 500 });
-	}
+  try { const { supabase, profile } = await requireUser([...MEETING_MANAGERS]); const body = await request.json(); const participantId = typeof body.participantId === "string" ? body.participantId.trim() : ""; if (!participantId) return NextResponse.json({ error: "Participant is required." }, { status: 400 }); const { data: meeting } = await supabase.from("meetings").select("id").eq("id", params.id).maybeSingle(); if (!meeting) return NextResponse.json({ error: "Meeting not found." }, { status: 404 }); const { data: participant, error: participantError } = await supabase.from("participants").select("id,user_id").eq("id", participantId).eq("meeting_id", params.id).maybeSingle(); if (participantError) throw participantError; if (!participant) return NextResponse.json({ error: "Participant not found." }, { status: 404 }); const { error } = await supabase.from("participants").delete().eq("id", participantId).eq("meeting_id", params.id); if (error) throw error; await recordAudit(supabase, profile.id, "REMOVE_PARTICIPANT", "participants", participantId, { meeting_id: params.id, user_id: participant.user_id }); return NextResponse.json({ success: true }); }
+  catch (error) { if (error instanceof Error && error.message === "UNAUTHORIZED") return NextResponse.json({ error: "Authentication required." }, { status: 401 }); if (error instanceof Error && error.message === "FORBIDDEN") return NextResponse.json({ error: "You do not have permission to manage participants." }, { status: 403 }); return NextResponse.json({ error: "Unable to remove participant." }, { status: 500 }); }
 }

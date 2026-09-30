@@ -18,6 +18,12 @@ export async function updateSession(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   const { pathname, search } = request.nextUrl;
   const publicAuthRoutes = ["/login", "/forgot-password", "/reset-password", "/set-password"];
+  const isApiRoute = pathname.startsWith("/api/");
+
+  // API routes perform their own authorization and must return JSON 401/403 responses.
+  // Redirecting an unauthenticated API request to /login turns a JSON failure into an
+  // HTML 200 response after fetch follows the redirect, which breaks API clients.
+  if (isApiRoute) return response;
 
   if (publicAuthRoutes.includes(pathname) && user) {
     if (pathname === "/login") {

@@ -62,4 +62,8 @@ CREATE POLICY meeting_recordings_staff_write ON public.meeting_recordings FOR AL
 DROP POLICY IF EXISTS users_admin_update ON public.users;
 CREATE POLICY users_admin_update ON public.users FOR UPDATE TO authenticated USING (public.current_role() IN ('Director','Super Admin')) WITH CHECK (public.current_role() IN ('Director','Super Admin'));
 
-CREATE POLICY IF NOT EXISTS embeddings_governance_leader_write ON public.embeddings FOR ALL TO authenticated USING (public.can_manage_meetings()) WITH CHECK (public.can_manage_meetings());
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='embeddings' AND policyname='embeddings_governance_leader_write') THEN
+    CREATE POLICY embeddings_governance_leader_write ON public.embeddings FOR ALL TO authenticated USING (public.can_manage_meetings()) WITH CHECK (public.can_manage_meetings());
+  END IF;
+END $$;

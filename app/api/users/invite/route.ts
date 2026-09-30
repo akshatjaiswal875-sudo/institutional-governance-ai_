@@ -5,7 +5,7 @@ import { requireUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { recordAudit } from "@/lib/audit";
 
-const roles = ["Director", "Principal", "HOD", "Coordinator", "Faculty / Volunteers", "Super Admin", "Meeting Secretary", "Faculty / Officer", "Member", "Auditor"] as const;
+const roles = ["Director", "Principal", "HOD", "Coordinators", "Faculty / Volunteers", "Super Admin", "Meeting Secretary", "Faculty / Officer", "Member", "Auditor"] as const;
 type Role = (typeof roles)[number];
 
 function generateTemporaryPassword() { return `${randomBytes(6).toString("base64url")}!A9`; }

@@ -13,9 +13,7 @@ function isUuid(value: unknown): value is string {
 
 function parseTags(value: unknown): TagInput[] | null {
   if (value === undefined) return [];
-  if (!Array.isArray(value)) return null;
-  if (value.length > 10) return null;
-
+  if (!Array.isArray(value) || value.length > 10) return null;
   const seen = new Set<string>();
   const tags: TagInput[] = [];
   for (const item of value) {
@@ -57,14 +55,18 @@ export async function GET() {
         ? raw.policy_tags.flatMap((entry) => {
             const row = entry as { policies?: { id: string; custom_id: string; title: string; status?: string | null; deleted_at?: string | null } | null };
             const policy = row.policies;
-            return policy && !policy.deleted_at ? [{ id: policy.id, type: "policy" as const, customId: policy.custom_id, title: policy.title, archived: policy.status === "ARCHIVED" }] : [];
+            return policy && !policy.deleted_at
+              ? [{ id: policy.id, type: "policy" as const, customId: policy.custom_id, title: policy.title, archived: policy.status === "Archived" }]
+              : [];
           })
         : [];
       const eventTags = Array.isArray(raw.event_tags)
         ? raw.event_tags.flatMap((entry) => {
             const row = entry as { events?: { id: string; custom_id: string; title: string; deleted_at?: string | null } | null };
             const event = row.events;
-            return event && !event.deleted_at ? [{ id: event.id, type: "event" as const, customId: event.custom_id, title: event.title }] : [];
+            return event && !event.deleted_at
+              ? [{ id: event.id, type: "event" as const, customId: event.custom_id, title: event.title }]
+              : [];
           })
         : [];
       return { ...raw, policy_tags: policyTags, event_tags: eventTags };
@@ -101,7 +103,7 @@ export async function POST(request: Request) {
     if (policyTagIds.length > 0) {
       const { data: policies, error } = await supabase.from("policies").select("id, deleted_at, status").in("id", policyTagIds);
       if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-      if ((policies ?? []).length !== policyTagIds.length || (policies ?? []).some((p) => p.deleted_at || p.status === "ARCHIVED")) {
+      if ((policies ?? []).length !== policyTagIds.length || (policies ?? []).some((p) => p.deleted_at || p.status === "Archived")) {
         return NextResponse.json({ error: "Archived or deleted policies cannot be tagged." }, { status: 400 });
       }
     }

@@ -1,4 +1,4 @@
-export type Role='Director'|'Principal'|'HOD'|'Coordinator'|'Faculty / Volunteers'|'Super Admin'|'Meeting Secretary'|'Faculty / Officer'|'Member'|'Auditor';
+export type Role='Director'|'Principal'|'HOD'|'Coordinator'|'Coordinators'|'Faculty / Volunteers'|'Super Admin'|'Meeting Secretary'|'Faculty / Officer'|'Member'|'Auditor';
 export type MeetingStatus='Draft'|'Transcribed'|'Pending Approval'|'Approved'|'Rejected'|'Published';
 export type MeetingType='online'|'offline';
 export type ActionStatus='Pending'|'In Progress'|'Completed';

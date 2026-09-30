@@ -59,10 +59,11 @@ export async function POST(request: NextRequest) {
         target_table: "meetings",
         target_id: data.id,
       }));
-      await admin.from("notifications").insert(notificationRows);
+      const { error: notificationError } = await admin.from("notifications").insert(notificationRows);
+      if (notificationError) console.error("Meeting notifications could not be created:", notificationError);
 
       if (type === "online" && conferenceUrl) {
-        const organizer = profile.email ?? "Institutional Governance";
+        const organizer = user.email ?? "Institutional Governance";
         await Promise.allSettled(
           users.map((recipient) =>
             sendMeetingInvitation({

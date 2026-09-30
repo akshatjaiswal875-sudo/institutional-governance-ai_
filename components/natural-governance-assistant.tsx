@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, ReactNode, useState } from "react";
-import { Bot, CalendarPlus, Check, Send, Sparkles, UserRound, X } from "lucide-react";
+import { Bot, CalendarPlus, Check, Clock3, Send, Sparkles, UserRound, X } from "lucide-react";
 
 async function api<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, { ...options, headers: { "Content-Type": "application/json", ...(options?.headers ?? {}) } });
@@ -13,6 +13,8 @@ async function api<T>(url: string, options?: RequestInit): Promise<T> {
 type Message = { role: "user" | "assistant"; content: string };
 type ActionDraft = { title: string; date: string | null; location: string | null; participantQuery: string; topic: string };
 type Participant = { id: string; email: string; role: string; department?: string | null };
+type BestTimeSlot = { start: string; end: string; availableCount: number; participantCount: number; score: number; reason: string };
+type BestTimeResult = { recommended: BestTimeSlot | null; alternatives: BestTimeSlot[]; provider: "gemini" | "openai" | "deterministic" | "none"; searchedFrom: string; searchedUntil: string; durationMinutes: number; participantCount: number };
 
 function inlineMarkdown(text: string): ReactNode[] {
   const tokens = text.split(/(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g).filter(Boolean);
@@ -26,78 +28,50 @@ function inlineMarkdown(text: string): ReactNode[] {
 
 function AssistantMessage({ content }: { content: string }) {
   const sourceMatches = [...content.matchAll(/\[(meeting|event|policy|decision|minutes|meeting_transcript|meeting_ai_analysis):([^\]]+)\]/gi)];
-  const clean = content
-    .replace(/\[(meeting|event|policy|decision|minutes|meeting_transcript|meeting_ai_analysis):[^\]]+\]/gi, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  const clean = content.replace(/\[(meeting|event|policy|decision|minutes|meeting_transcript|meeting_ai_analysis):[^\]]+\]/gi, "").replace(/\n{3,}/g, "\n\n").trim();
   const lines = clean.split(/\r?\n/);
   const blocks: ReactNode[] = [];
   let bullets: { text: string; ordered: boolean }[] = [];
-
   const flushList = () => {
     if (!bullets.length) return;
     const ordered = bullets[0].ordered;
     const ListTag = ordered ? "ol" : "ul";
-    blocks.push(
-      <ListTag key={`list-${blocks.length}`} className={`${ordered ? "list-decimal" : "list-disc"} my-3 space-y-1.5 pl-5 text-slate-200`}>
-        {bullets.map((item, index) => <li key={index} className="pl-1 leading-6">{inlineMarkdown(item.text)}</li>)}
-      </ListTag>,
-    );
+    blocks.push(<ListTag key={`list-${blocks.length}`} className={`${ordered ? "list-decimal" : "list-disc"} my-3 space-y-1.5 pl-5 text-slate-200`}>{bullets.map((item, index) => <li key={index} className="pl-1 leading-6">{inlineMarkdown(item.text)}</li>)}</ListTag>);
     bullets = [];
   };
-
   lines.forEach((raw, index) => {
     const line = raw.trim();
     if (!line) { flushList(); return; }
     if (/^[-*_]{3,}$/.test(line)) { flushList(); return; }
-
     const bullet = line.match(/^[-*•]\s+(.+)$/);
     const numbered = line.match(/^\d+[.)]\s+(.+)$/);
     if (bullet) { bullets.push({ text: bullet[1], ordered: false }); return; }
     if (numbered) { bullets.push({ text: numbered[1], ordered: true }); return; }
-
     flushList();
     const heading = line.match(/^#{1,3}\s+(.+)$/);
-    if (heading) {
-      blocks.push(<h3 key={index} className="mt-4 mb-2 text-base font-semibold text-white first:mt-0">{inlineMarkdown(heading[1])}</h3>);
-      return;
-    }
-
+    if (heading) { blocks.push(<h3 key={index} className="mt-4 mb-2 text-base font-semibold text-white first:mt-0">{inlineMarkdown(heading[1])}</h3>); return; }
     const label = line.match(/^\*\*(.+?)\*\*\s*:\s*(.*)$/);
-    if (label) {
-      blocks.push(<p key={index} className="my-2 leading-6"><strong className="font-semibold text-cyan-200">{label[1]}:</strong>{label[2] ? <> {inlineMarkdown(label[2])}</> : null}</p>);
-      return;
-    }
-
+    if (label) { blocks.push(<p key={index} className="my-2 leading-6"><strong className="font-semibold text-cyan-200">{label[1]}:</strong>{label[2] ? <> {inlineMarkdown(label[2])}</> : null}</p>); return; }
     blocks.push(<p key={index} className="my-2 leading-6 text-slate-200">{inlineMarkdown(line)}</p>);
   });
   flushList();
+  return <div className="text-[15px] leading-6">{blocks}{sourceMatches.length > 0 && <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-700/70 pt-3"><span className="text-xs font-medium uppercase tracking-wider text-slate-500">Sources</span>{Array.from(new Set(sourceMatches.map(match => match[1].toLowerCase()))).map(type => <span key={type} className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900/80 px-2.5 py-1 text-xs text-slate-300"><Check size={12} className="text-cyan-300" /> {type.replace(/_/g, " ")}</span>)}</div>}</div>;
+}
 
-  return (
-    <div className="text-[15px] leading-6">
-      {blocks}
-      {sourceMatches.length > 0 && (
-        <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-700/70 pt-3">
-          <span className="text-xs font-medium uppercase tracking-wider text-slate-500">Sources</span>
-          {Array.from(new Set(sourceMatches.map(match => match[1].toLowerCase()))).map(type => (
-            <span key={type} className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900/80 px-2.5 py-1 text-xs text-slate-300">
-              <Check size={12} className="text-cyan-300" /> {type.replace(/_/g, " ")}
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
-  );
+function formatSlot(start: string, end: string) {
+  return `${new Date(start).toLocaleString("en-IN", { dateStyle: "full", timeStyle: "short" })} – ${new Date(end).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}`;
 }
 
 export function NaturalGovernanceAssistant() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
+  const [findingBestTime, setFindingBestTime] = useState(false);
   const [error, setError] = useState("");
   const [draft, setDraft] = useState<ActionDraft | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
+  const [bestTimeResult, setBestTimeResult] = useState<BestTimeResult | null>(null);
   const [meetingDialogOpen, setMeetingDialogOpen] = useState(false);
   const [meetingPrompt, setMeetingPrompt] = useState("");
 
@@ -110,7 +84,7 @@ export function NaturalGovernanceAssistant() {
   }
 
   async function prepareMeeting(message: string) {
-    setBusy(true); setError("");
+    setBusy(true); setError(""); setBestTimeResult(null);
     try {
       const result = await api<any>("/api/assistant/meeting-action", { method: "POST", body: JSON.stringify({ action: "prepare", message }) });
       const hasNeeds = Boolean(result.needs?.length);
@@ -121,14 +95,31 @@ export function NaturalGovernanceAssistant() {
     finally { setBusy(false); }
   }
 
+  async function findBestTime() {
+    if (!selected.length || findingBestTime) return;
+    setFindingBestTime(true); setError("");
+    try {
+      const result = await api<BestTimeResult>("/api/calendar/find-best-time", { method: "POST", body: JSON.stringify({ participantIds: selected, durationMinutes: 60 }) });
+      setBestTimeResult(result);
+      if (!result.recommended) setError("No common free slot was found in the next 7 days. Try fewer participants or a shorter duration.");
+    } catch (e) { setError(e instanceof Error ? e.message : "Unable to find a common free time."); }
+    finally { setFindingBestTime(false); }
+  }
+
+  function useBestTime(slot: BestTimeSlot) {
+    if (!draft) return;
+    setDraft({ ...draft, date: slot.start });
+    setError("");
+  }
+
   async function confirmMeeting() {
-    if (!draft || !selected.length || busy) return;
+    if (!draft || !selected.length || busy || findingBestTime) return;
     setBusy(true); setError("");
     try {
       const result = await api<any>("/api/assistant/meeting-action", { method: "POST", body: JSON.stringify({ action: "confirm", draft, participantIds: selected }) });
       const invitationText = result.invitationErrors?.length ? ` ${result.invitationErrors.length} invitation(s) need attention.` : ` Invitations were sent to ${result.participants.length} participant(s).`;
       setMessages(prev => [...prev, { role: "assistant", content: `Meeting created successfully: ${result.meeting.title}.${invitationText}` }]);
-      setDraft(null); setParticipants([]); setSelected([]); setError("");
+      setDraft(null); setParticipants([]); setSelected([]); setBestTimeResult(null); setError("");
     } catch (e) { setError(e instanceof Error ? e.message : "Unable to create meeting."); }
     finally { setBusy(false); }
   }
@@ -142,14 +133,7 @@ export function NaturalGovernanceAssistant() {
       <section className="card flex min-h-[560px] flex-col p-5">
         <div className="flex-1 space-y-4 overflow-auto pr-1">
           {!messages.length && <div className="py-16 text-center"><Sparkles className="mx-auto mb-4" size={34}/><h2 className="text-xl font-semibold">How can I help?</h2><p className="mx-auto mt-2 max-w-lg text-slate-400">Ask in normal language. You don't need exact commands or database terms.</p><div className="mt-6 flex flex-wrap justify-center gap-2">{suggestions.map(s => <button key={s} onClick={() => void ask(s)} className="btn btn-secondary text-sm">{s}</button>)}</div></div>}
-          {messages.map((m, i) => (
-            <div key={i} className={`flex gap-3 ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[88%] rounded-2xl px-4 py-3 shadow-sm ${m.role === "user" ? "bg-indigo-600 text-white" : "border border-slate-700/80 bg-slate-800/90 text-slate-100"}`}>
-                <div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-wide opacity-70">{m.role === "user" ? <><UserRound size={14}/> You</> : <><Bot size={14}/> Governance AI</>}</div>
-                {m.role === "assistant" ? <AssistantMessage content={m.content}/> : <div className="whitespace-pre-wrap leading-6">{m.content}</div>}
-              </div>
-            </div>
-          ))}
+          {messages.map((m, i) => <div key={i} className={`flex gap-3 ${m.role === "user" ? "justify-end" : "justify-start"}`}><div className={`max-w-[88%] rounded-2xl px-4 py-3 shadow-sm ${m.role === "user" ? "bg-indigo-600 text-white" : "border border-slate-700/80 bg-slate-800/90 text-slate-100"}`}><div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-wide opacity-70">{m.role === "user" ? <><UserRound size={14}/> You</> : <><Bot size={14}/> Governance AI</>}</div>{m.role === "assistant" ? <AssistantMessage content={m.content}/> : <div className="whitespace-pre-wrap leading-6">{m.content}</div>}</div></div>)}
           {busy && <div className="flex items-center gap-2 text-sm text-slate-400"><Bot size={15}/> Assistant is thinking<span className="animate-pulse">...</span></div>}
         </div>
         {error && <p className="mb-3 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-sm text-red-300" role="alert">{error}</p>}
@@ -157,7 +141,14 @@ export function NaturalGovernanceAssistant() {
       </section>
       <aside className="space-y-4">
         <div className="card p-5"><h2 className="font-semibold">Admin quick action</h2><p className="mt-2 text-sm text-slate-400">Super Admins can create a meeting by describing it naturally.</p><button onClick={() => { setError(""); setMeetingDialogOpen(true); }} className="btn btn-primary mt-4 inline-flex items-center gap-2" disabled={busy}><CalendarPlus size={17}/>Create meeting with AI</button></div>
-        {draft && <div className="card p-5"><h2 className="font-semibold">Review meeting</h2><div className="mt-3 space-y-2 text-sm"><p><b>Title:</b> {draft.title}</p><p><b>Date:</b> {draft.date ?? "Missing"}</p><p><b>Location:</b> {draft.location ?? "Not specified"}</p><p><b>Participants:</b> {draft.participantQuery || "Not specified"}</p>{draft.topic && <p><b>Agenda:</b> {draft.topic}</p>}</div>{participants.length > 0 && <div className="mt-4 max-h-48 space-y-2 overflow-auto">{participants.map(p => <label key={p.id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={selected.includes(p.id)} onChange={e => setSelected(v => e.target.checked ? [...v, p.id] : v.filter(id => id !== p.id))}/><span>{p.email}{p.department ? ` · ${p.department}` : ""}</span></label>)}</div>}{participants.length === 0 && draft.participantQuery && <p className="mt-4 text-sm text-amber-300">No matching participant was found. Try a department such as Faculty or an exact user email.</p>}<button onClick={() => void confirmMeeting()} disabled={busy || !draft.date || !selected.length} className="btn btn-primary mt-4 w-full">Confirm & send invitations</button></div>}
+        {draft && <div className="card p-5"><h2 className="font-semibold">Review meeting</h2><div className="mt-3 space-y-2 text-sm"><p><b>Title:</b> {draft.title}</p><p><b>Date:</b> {draft.date ? new Date(draft.date).toLocaleString("en-IN", { dateStyle: "full", timeStyle: "short" }) : "Missing"}</p><p><b>Location:</b> {draft.location ?? "Not specified"}</p><p><b>Participants:</b> {draft.participantQuery || "Not specified"}</p>{draft.topic && <p><b>Agenda:</b> {draft.topic}</p>}</div>
+          {participants.length > 0 && <div className="mt-4 max-h-48 space-y-2 overflow-auto">{participants.map(p => <label key={p.id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={selected.includes(p.id)} onChange={e => { setSelected(v => e.target.checked ? [...v, p.id] : v.filter(id => id !== p.id)); setBestTimeResult(null); }}/><span>{p.email}{p.department ? ` · ${p.department}` : ""}</span></label>)}</div>}
+          {participants.length === 0 && draft.participantQuery && <p className="mt-4 text-sm text-amber-300">No matching participant was found. Try a department such as Faculty or an exact user email.</p>}
+          <button onClick={() => void findBestTime()} disabled={busy || findingBestTime || !selected.length} className="btn btn-secondary mt-4 w-full inline-flex items-center justify-center gap-2"><Sparkles size={16}/>{findingBestTime ? "Analyzing calendars..." : "Find Best Time ✨"}</button>
+          {bestTimeResult?.recommended && <div className="mt-4 rounded-2xl border border-cyan-400/20 bg-cyan-400/5 p-4"><div className="flex items-center gap-2 text-sm font-semibold text-cyan-200"><Sparkles size={15}/> AI recommended time</div><p className="mt-2 font-semibold text-white">{formatSlot(bestTimeResult.recommended.start, bestTimeResult.recommended.end)}</p><p className="mt-1 text-xs text-slate-400">{bestTimeResult.recommended.availableCount}/{bestTimeResult.recommended.participantCount} participants available · score {bestTimeResult.recommended.score}</p><p className="mt-2 text-xs leading-5 text-slate-300">{bestTimeResult.recommended.reason}</p><button onClick={() => useBestTime(bestTimeResult.recommended!)} className="btn btn-primary mt-3 w-full">Use this time</button><div className="mt-2 text-center text-[10px] uppercase tracking-widest text-slate-500">Ranking: {bestTimeResult.provider}</div></div>}
+          {bestTimeResult?.alternatives?.length > 0 && <div className="mt-4 space-y-2"><p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Alternative slots</p>{bestTimeResult.alternatives.slice(0, 3).map(slot => <button key={`${slot.start}-${slot.end}`} onClick={() => useBestTime(slot)} className="w-full rounded-xl border border-slate-700/70 bg-slate-900/60 p-3 text-left hover:border-cyan-400/30"><div className="flex items-center gap-2 text-sm font-medium text-slate-200"><Clock3 size={14} className="text-cyan-300"/>{formatSlot(slot.start, slot.end)}</div><p className="mt-1 text-xs text-slate-500">{slot.reason}</p></button>)}</div>}
+          <button onClick={() => void confirmMeeting()} disabled={busy || findingBestTime || !draft.date || !selected.length} className="btn btn-primary mt-4 w-full">Confirm & send invitations</button>
+        </div>}
       </aside>
     </div>
 

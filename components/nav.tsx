@@ -10,6 +10,7 @@ type Role = "Director" | "Principal" | "HOD" | "Coordinators" | "Coordinator" | 
 
 const links = [
   ["/dashboard", "Dashboard", LayoutDashboard],
+  ["/calendar", "Calendar", CalendarDays],
   ["/meetings", "Meetings", CalendarDays],
   ["/events", "Events", CalendarDays],
   ["/policies", "Policies", FileText],
@@ -22,8 +23,8 @@ const links = [
 
 const mobilePrimary = [
   ["/dashboard", "Home", LayoutDashboard],
+  ["/calendar", "Calendar", CalendarDays],
   ["/meetings", "Meetings", CalendarDays],
-  ["/events", "Events", CalendarDays],
   ["/assistant", "AI", MessageSquare],
 ] as const;
 

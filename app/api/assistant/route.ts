@@ -19,10 +19,6 @@ type AssistantSource = Record<string, unknown> & {
   parent_id: string;
 };
 
-function unique<T>(values: T[]): T[] {
-  return Array.from(new Set(values));
-}
-
 function addSource(
   sources: AssistantSource[],
   sourceKeys: Set<string>,
@@ -77,7 +73,10 @@ export async function POST(req: NextRequest) {
 
     const context = rows
       .map((row) => row.chunk_content)
-      .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      .filter(
+        (value): value is string =>
+          typeof value === 'string' && value.trim().length > 0,
+      )
       .join('\n\n');
 
     const answer = await answerMeetingQuestion(context, body.message);

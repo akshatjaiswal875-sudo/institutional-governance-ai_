@@ -28,6 +28,7 @@ export function OnlineMeetingForm() {
     const title = String(form.get("title") ?? "").trim();
     const date = String(form.get("date") ?? "");
     const time = String(form.get("time") ?? "09:00");
+    const conferenceUrl = String(form.get("conference_url") ?? "").trim();
     if (!title || !date || !time) {
       setError("Title, date and time are required.");
       return;
@@ -41,6 +42,7 @@ export function OnlineMeetingForm() {
         date: `${date}T${time}:00+05:30`,
         location: type === "online" ? "Online" : String(form.get("location") ?? ""),
         type,
+        conference_url: type === "online" ? conferenceUrl : undefined,
       });
       setCreated(data);
     } catch (err) {
@@ -56,7 +58,7 @@ export function OnlineMeetingForm() {
       <div className="mx-auto max-w-3xl space-y-6">
         <div>
           <h1 className="text-3xl font-semibold">Meeting created</h1>
-          <p className="mt-2 text-slate-600">Your meeting has been saved and notifications have been prepared.</p>
+          <p className="mt-2 text-slate-600">Your meeting has been saved and the online link has been included in participant email invitations.</p>
         </div>
         <section className="rounded-2xl border border-[#b8c3a4] bg-white/80 p-6 shadow-sm">
           <div className="flex items-start gap-3">
@@ -69,8 +71,8 @@ export function OnlineMeetingForm() {
 
           {online ? (
             <div className="mt-6 rounded-xl border border-[#b8c3a4] bg-[#f3f5ea] p-5">
-              <div className="flex items-center gap-2 font-semibold text-[#18251f]"><Video size={18} /> Online meeting is ready</div>
-              <p className="mt-2 text-sm text-slate-600">This link is also included in participant email invitations and notifications.</p>
+              <div className="flex items-center gap-2 font-semibold text-[#18251f]"><Video size={18} /> Online meeting link</div>
+              <p className="mt-2 text-sm text-slate-600">This exact link has been sent to participant email invitations and is available in the meeting notifications.</p>
               <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
                 <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-[#c6cfb8] bg-white px-3 py-2 text-sm text-slate-700">
                   <Link2 size={16} className="shrink-0" />
@@ -110,7 +112,14 @@ export function OnlineMeetingForm() {
           </div>
           <label className="block text-sm font-medium text-[#26342e]">Location<input name="location" className="input mt-2" placeholder={type === "online" ? "Online meeting" : "Room / venue"} disabled={type === "online"} /></label>
           <label className="block text-sm font-medium text-[#26342e]">Meeting type<select name="type" className="select mt-2" value={type} onChange={(event) => setType(event.target.value as "offline" | "online")}><option value="offline">Offline</option><option value="online">Online</option></select></label>
-          {type === "online" && <div className="rounded-xl border border-[#b8c3a4] bg-[#f3f5ea] p-4 text-sm text-[#315247]"><div className="flex items-center gap-2 font-semibold"><Video size={17} /> Online link will be generated automatically</div><p className="mt-1 text-slate-600">After saving, the Join Meeting link will be shown here and included in notifications and email invitations.</p></div>}
+          {type === "online" && (
+            <div className="rounded-xl border border-[#b8c3a4] bg-[#f3f5ea] p-4">
+              <div className="flex items-center gap-2 font-semibold text-[#315247]"><Video size={17} /> Online meeting link</div>
+              <p className="mt-1 text-sm text-slate-600">Paste your Google Meet, Zoom, Microsoft Teams, Jitsi, or any other conference link. If you leave it empty, the system will generate a Jitsi link automatically.</p>
+              <input name="conference_url" className="input mt-3 bg-white" type="url" placeholder="https://meet.google.com/..." />
+              <p className="mt-2 text-xs text-slate-500">The link you enter will be sent directly to all participant email invitations and included in meeting notifications.</p>
+            </div>
+          )}
           {error && <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{error}</p>}
           <button className="btn btn-primary" disabled={saving}>{saving ? "Creating meeting..." : type === "online" ? "Create online meeting" : "Save draft"}</button>
         </form>

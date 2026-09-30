@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { BarChart3, Bell, CalendarDays, FileText, LayoutDashboard, Menu, MessageSquare, Search, Users, X, LogOut, ShieldCheck, Sparkles } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
-type Role = "Director" | "Principal" | "HOD" | "Coordinator" | "Faculty / Volunteers" | "Super Admin" | "Meeting Secretary" | "Faculty / Officer" | "Member" | "Auditor";
+type Role = "Director" | "Principal" | "HOD" | "Coordinators" | "Coordinator" | "Faculty / Volunteers" | "Super Admin" | "Meeting Secretary" | "Faculty / Officer" | "Member" | "Auditor";
 
 const links = [
   ["/dashboard", "Dashboard", LayoutDashboard],

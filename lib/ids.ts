@@ -1,8 +1,10 @@
-import type { PrismaClient } from "@prisma/client";
-
 export type EntityType = "POLICY" | "EVENT";
 
 type Prefix = "PC" | "EV";
+
+type AtomicQueryClient = {
+  $queryRaw<T>(query: TemplateStringsArray, ...values: unknown[]): Promise<T>;
+};
 
 const PREFIXES: Record<EntityType, Prefix> = {
   POLICY: "PC",
@@ -34,7 +36,6 @@ export function parseCustomId(value: string): {
     return null;
   }
 
-  const prefix = match[1].toUpperCase();
   const sequence = BigInt(match[2]);
 
   if (sequence < 1n) {
@@ -42,13 +43,21 @@ export function parseCustomId(value: string): {
   }
 
   return {
-    entity: prefix === "PC" ? "POLICY" : "EVENT",
+    entity: match[1].toUpperCase() === "PC" ? "POLICY" : "EVENT",
     sequence,
   };
 }
 
+/**
+ * The SQL uses INSERT ... ON CONFLICT DO UPDATE ... RETURNING, so two
+ * concurrent requests cannot receive the same sequence number.
+ *
+ * Pass a PrismaClient or transaction client at the call site. The small
+ * structural type keeps this helper testable without importing Prisma into
+ * the Next.js bundle.
+ */
 export async function generateCustomId(
-  prisma: PrismaClient,
+  prisma: AtomicQueryClient,
   entity: EntityType,
 ): Promise<string> {
   const key = COUNTER_KEYS[entity];

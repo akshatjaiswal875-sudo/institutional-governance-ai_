@@ -89,6 +89,9 @@ async function transcribeLocally(file: File): Promise<string> {
 
 export async function transcribeLocalAudio(file: File): Promise<string> {
   if (process.env.WHISPER_WORKER_URL?.trim()) return transcribeViaWorker(file);
+  // Hosted ASR endpoints accept audio payloads, not arbitrary video containers.
+  // OpenAI Whisper's local decoder uses ffmpeg and can extract the audio stream from video.
+  if (file.type.startsWith("video/")) return transcribeLocally(file);
   if (process.env.HUGGINGFACE_API_KEY?.trim()) return transcribeViaHuggingFace(file);
   return transcribeLocally(file);
 }

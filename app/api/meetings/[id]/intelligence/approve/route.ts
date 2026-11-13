@@ -34,7 +34,12 @@ export async function POST(request: Request, { params }: { params: { id: string 
       if (typeof decision?.decision_text !== "string" || !decision.decision_text.trim()) continue;
       const { data: existing } = await supabase.from("decisions").select("id").eq("minute_id", minuteId).eq("decision_text", decision.decision_text.trim()).limit(1).maybeSingle();
       if (existing) continue;
-      const { error } = await supabase.from("decisions").insert({ meeting_id: params.id, minute_id: minuteId, decision_text: decision.decision_text.trim(), action_item: typeof decision.action_item === "string" ? decision.action_item : null, assignee_id: typeof decision.assignee_id === "string" ? decision.assignee_id : null, due_date: typeof decision.due_date === "string" ? decision.due_date : null, status: "Pending" });
+      let decisionAssigneeId = typeof decision.assignee_id === "string" ? decision.assignee_id : null;
+      if (!decisionAssigneeId && typeof decision.assignee_email === "string" && decision.assignee_email.trim()) {
+        const { data: decisionAssignee } = await supabase.from("users").select("id").eq("email", decision.assignee_email.trim().toLowerCase()).maybeSingle();
+        decisionAssigneeId = decisionAssignee?.id ?? null;
+      }
+      const { error } = await supabase.from("decisions").insert({ meeting_id: params.id, minute_id: minuteId, decision_text: decision.decision_text.trim(), action_item: typeof decision.action_item === "string" ? decision.action_item : null, assignee_id: decisionAssigneeId, due_date: typeof decision.due_date === "string" ? decision.due_date : null, status: "Pending" });
       if (error) throw error;
     }
 

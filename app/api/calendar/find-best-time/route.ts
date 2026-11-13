@@ -60,17 +60,32 @@ export async function POST(request: Request) {
     const [{ data: users, error: usersError }, { data: availability, error: availabilityError }, { data: events, error: eventsError }, { data: participantLinks, error: participantLinksError }] = await Promise.all([
       admin.from("users").select("id,email,role,department").in("id", participantIds),
       admin.from("user_availability").select("user_id,day_of_week,start_time,end_time,available").in("user_id", participantIds),
-      admin.from("events").select("id,organizer_id,start_time,end_time").in("organizer_id", participantIds).gte("start_time", `${startDate}T00:00:00${TIME_ZONE_OFFSET}`).lt("start_time", `${endDate}T00:00:00${TIME_ZONE_OFFSET}`),
-      admin.from("participants").select("meeting_id,user_id").in("user_id", participantIds),
+      admin.from("events").select("id,organizer_id,start_time,end_time").in("organizer_id", participantIds).lt("start_time", `${endDate}T00:00:00${TIME_ZONE_OFFSET}`).gt("end_time", `${startDate}T00:00:00${TIME_ZONE_OFFSET}`).is("deleted_at", null),
+      admin.from("participants").select("meeting_id,user_id,attendance_status").in("user_id", participantIds),
     ]);
     if (usersError) throw usersError; if (availabilityError) throw availabilityError; if (eventsError) throw eventsError; if (participantLinksError) throw participantLinksError;
     if (!users || users.length !== participantIds.length) return NextResponse.json({ error: "One or more selected participants could not be found." }, { status: 400 });
     const meetingIds = [...new Set((participantLinks ?? []).map(row => row.meeting_id).filter((id): id is string => typeof id === "string"))];
-    let meetings: Array<{ id: string; date: string; created_by: string }> = [];
-    if (meetingIds.length) { const { data, error } = await admin.from("meetings").select("id,date,created_by").in("id", meetingIds).gte("date", `${startDate}T00:00:00${TIME_ZONE_OFFSET}`).lt("date", `${endDate}T00:00:00${TIME_ZONE_OFFSET}`); if (error) throw error; meetings = data ?? []; }
+    let meetings: Array<{ id: string; date: string; created_by: string; status: string | null }> = [];
+    if (meetingIds.length) { const { data, error } = await admin.from("meetings").select("id,date,created_by,status").in("id", meetingIds).gte("date", `${startDate}T00:00:00${TIME_ZONE_OFFSET}`).lt("date", `${endDate}T00:00:00${TIME_ZONE_OFFSET}`); if (error) throw error; meetings = data ?? []; }
+    const agendaMinutesByMeeting = new Map<string, number>();
+    if (meetingIds.length) {
+      const { data: agendaRows, error: agendaError } = await admin.from("agenda_items").select("meeting_id,duration_minutes").in("meeting_id", meetingIds);
+      if (agendaError) throw agendaError;
+      for (const row of agendaRows ?? []) {
+        const minutes = Number(row.duration_minutes);
+        if (Number.isFinite(minutes) && minutes > 0) agendaMinutesByMeeting.set(row.meeting_id, (agendaMinutesByMeeting.get(row.meeting_id) ?? 0) + minutes);
+      }
+    }
+    const activeParticipantLinks = (participantLinks ?? []).filter(link => String(link.attendance_status ?? "").toLowerCase() !== "declined");
     const busy: BusyItem[] = [
       ...(events ?? []).map(event => ({ user_id: event.organizer_id, start: new Date(event.start_time).getTime(), end: new Date(event.end_time).getTime(), source: "event" as const })),
-      ...(meetings ?? []).flatMap(meeting => { const linkedUsers = (participantLinks ?? []).filter(link => link.meeting_id === meeting.id).map(link => link.user_id); return linkedUsers.map(userId => ({ user_id: userId, start: new Date(meeting.date).getTime(), end: new Date(meeting.date).getTime() + durationMinutes * 60_000, source: "meeting" as const })); }),
+      ...(meetings ?? []).flatMap(meeting => {
+        const linkedUsers = activeParticipantLinks.filter(link => link.meeting_id === meeting.id).map(link => link.user_id);
+        const existingDuration = agendaMinutesByMeeting.get(meeting.id) || DEFAULT_DURATION_MINUTES;
+        const start = new Date(meeting.date).getTime();
+        return linkedUsers.map(userId => ({ user_id: userId, start, end: start + existingDuration * 60_000, source: "meeting" as const }));
+      }),
     ].filter(item => Number.isFinite(item.start) && Number.isFinite(item.end) && item.end > item.start);
     const availabilityByUser = new Map<string, AvailabilityRow[]>();
     for (const row of availability ?? []) { const list = availabilityByUser.get(row.user_id) ?? []; list.push(row); availabilityByUser.set(row.user_id, list); }

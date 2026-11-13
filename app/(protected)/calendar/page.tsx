@@ -42,7 +42,7 @@ export default function CalendarPage() {
       for (const row of availabilityResult.data ?? []) {
         const dayOfWeek = Number(row.day_of_week); const [sh, sm] = String(row.start_time).slice(0,5).split(":").map(Number); const [eh, em] = String(row.end_time).slice(0,5).split(":").map(Number);
         const daysInMonth = new Date(month.getFullYear(), month.getMonth()+1, 0).getDate();
-        for (let day=1; day<=daysInMonth; day++) { const date=new Date(month.getFullYear(),month.getMonth(),day); if(date.getDay()!==dayOfWeek) continue; const start=new Date(date), end=new Date(date); start.setHours(sh,sm,0,0); end.setHours(eh,em,0,0); next.push({id:`availability-${date.toISOString()}-${row.start_time}`,title:"Available",start,end,kind:"availability"}); }
+        for (let day=1; day<=daysInMonth; day++) { const date=new Date(month.getFullYear(),month.getMonth(),day); if(date.getDay() !== (dayOfWeek % 7)) continue; const start=new Date(date), end=new Date(date); start.setHours(sh,sm,0,0); end.setHours(eh,em,0,0); next.push({id:`availability-${date.toISOString()}-${row.start_time}`,title:"Available",start,end,kind:"availability"}); }
       }
       if (!cancelled) { setItems(next); setLoading(false); }
     }

@@ -5,7 +5,7 @@ Production-oriented Next.js + Supabase + pgvector foundation implementing the fi
 ## 1. Requirements
 - Node.js 20+
 - A Supabase project
-- An OpenAI API key
+- A Hugging Face token with Inference Providers access (for hosted transcription and analysis), or a configured local Whisper runtime
 
 ## 2. Install
 ```bash
@@ -37,10 +37,17 @@ where email='you@example.com';
 Create a Supabase Auth user, create its `public.users` profile row, then sign in at `/login`.
 
 ## 6. Meeting AI flow
-Go to `/meetings` → create a meeting → open it → upload audio/video → the processing route stores the media, transcribes it, summarizes it, extracts actions, creates embeddings, and changes the meeting to `Pending Approval`.
+Go to `/meetings` → create a meeting → open it → upload audio/video → choose **Process**. The processing route downloads the private recording, transcribes it with the configured Whisper path, generates a summary and candidate decisions/action items, and saves a draft analysis for human review. The reviewer can edit the result and explicitly approve it; approval creates versioned minutes and governance action items. The legacy `/api/meetings/[id]/process` endpoint forwards to the same processing implementation.
+
+### AI provider configuration
+- Set `HUGGINGFACE_API_KEY` to enable hosted Whisper transcription and Hugging Face analysis.
+- Set `WHISPER_WORKER_URL` (and optional `WHISPER_WORKER_TOKEN`) to use a dedicated transcription worker.
+- If neither hosted option is configured, the application attempts the local Python Whisper runtime under `ai/whisper`; install its requirements and ensure ffmpeg is available.
+- Video uploads are routed through the local Whisper/ffmpeg path unless a dedicated worker is configured.
+- Semantic embeddings are optional. Set `ENABLE_OPENAI_EMBEDDINGS=true` and `OPENAI_API_KEY` to generate 1536-dimensional OpenAI embeddings. Without this flag, transcript analysis and human approval still work; semantic indexing is skipped.
 
 ### Important production note
-The included Whisper endpoint sends the uploaded file directly. For production recordings larger than the provider's upload limit, implement server-side media chunking/transcoding before transcription. The database and UI are structured so that this can be added without changing the governance model.
+The processing endpoint is synchronous and has a 300-second platform execution ceiling. For recordings that exceed that window, use a durable background worker/queue and poll processing status rather than increasing the request timeout. Validate the configured provider's file-size and duration limits before production rollout.
 
 ## 7. Deployment
 For Vercel, add the same environment variables under Project Settings → Environment Variables, then deploy. Add your production URL to Supabase Auth redirect/site URL settings.

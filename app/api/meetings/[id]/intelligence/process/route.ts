@@ -26,7 +26,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
 
     admin = createAdminClient();
     const [{ data: meeting, error: meetingError }, { data: recording, error: recordingError }] = await Promise.all([
-      admin.from("meetings").select("id,title").eq("id", params.id).maybeSingle(),
+      admin.from("meetings").select("id,title,status").eq("id", params.id).maybeSingle(),
       admin.from("meeting_recordings").select("id,meeting_id,storage_path,original_filename,mime_type,file_size,status").eq("id", recordingId).eq("meeting_id", params.id).maybeSingle(),
     ]);
     if (meetingError) throw meetingError;

@@ -5,7 +5,7 @@ import { recordAudit } from "@/lib/audit";
 import { extractActions, summarizeTranscript, transcribe } from "@/lib/ai/pipeline";
 
 export const runtime = "nodejs";
-export const maxDuration = 900;
+export const maxDuration = 300;
 
 const PROCESSORS = ["Director", "Principal", "HOD", "Coordinator", "Super Admin", "Meeting Secretary"] as const;
 const MAX_TRANSCRIPT_LENGTH = 120_000;
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     const { error: startError } = await admin.from("meeting_recordings").update({ status: "transcribing", error_message: null, updated_at: new Date().toISOString() }).eq("id", recordingId);
     if (startError) throw startError;
 
-    const { data: storedFile, error: downloadError } = await admin.storage.from("meeting-media").download(recording.storage_path);
+    // Remove an earlier partial attempt before retrying a failed recording.\n    const { error: previousTranscriptError } = await admin.from("meeting_transcripts").delete().eq("recording_id", recordingId);\n    if (previousTranscriptError) throw previousTranscriptError;\n\n    const { data: storedFile, error: downloadError } = await admin.storage.from("meeting-media").download(recording.storage_path);
     if (downloadError || !storedFile) throw downloadError ?? new Error("The uploaded recording could not be downloaded.");
     const inputFile = new File([storedFile], recording.original_filename || "meeting-recording", { type: recording.mime_type || "application/octet-stream" });
     const transcript = (await transcribe(inputFile)).trim();

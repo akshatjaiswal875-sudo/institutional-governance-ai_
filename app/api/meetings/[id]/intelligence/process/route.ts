@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { recordAudit } from "@/lib/audit";
 import { extractActions, summarizeTranscript, transcribe } from "@/lib/ai/pipeline";
+import { replaceMeetingEmbeddings } from "@/lib/ai/meeting-embeddings";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -98,23 +99,12 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     }).select("id,status,summary,key_points,suggested_minutes,extracted_decisions,extracted_action_items,created_at").single();
     if (analysisError) throw analysisError;
 
-    // Embeddings are an optional search enhancement. They must not block the transcript
-    // and human-review workflow when semantic indexing has not been configured.
-    if (process.env.ENABLE_OPENAI_EMBEDDINGS === "true") {
-      try {
-        const { embed } = await import("@/lib/ai/pipeline");
-        const chunks = boundedTranscript.match(/[\s\S]{1,3000}/g) ?? [];
-        const vectors = await Promise.all(chunks.map((chunk) => embed(chunk)));
-        if (vectors.length) {
-          const { error: embeddingError } = await admin.from("embeddings").insert(vectors.map((vector, index) => ({
-            parent_type: "meeting", parent_id: params.id, chunk_content: chunks[index],
-            embedding: vector, metadata: { transcript_id: transcriptRow.id, recording_id: recordingId, chunk_index: index },
-          })));
-          if (embeddingError) console.error("[meeting-intelligence] embedding insert failed", embeddingError);
-        }
-      } catch (embeddingError) {
-        console.error("[meeting-intelligence] optional embedding generation failed", embeddingError);
-      }
+    // Semantic indexing is optional and isolated from the core AI workflow.
+    await replaceMeetingEmbeddings(admin, params.id, meeting.title, boundedTranscript);
+
+    if (["Draft", "Rejected"].includes(meeting.status)) {
+      const { error: meetingStatusError } = await admin.from("meetings").update({ status: "Transcribed" }).eq("id", params.id);
+      if (meetingStatusError) console.error("[meeting-intelligence] unable to update meeting status", meetingStatusError);
     }
 
     const { error: completeError } = await admin.from("meeting_recordings").update({ status: "completed", error_message: null, updated_at: new Date().toISOString() }).eq("id", recordingId);

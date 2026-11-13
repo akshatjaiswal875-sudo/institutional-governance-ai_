@@ -42,7 +42,11 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     const { error: startError } = await admin.from("meeting_recordings").update({ status: "transcribing", error_message: null, updated_at: new Date().toISOString() }).eq("id", recordingId);
     if (startError) throw startError;
 
-    // Remove an earlier partial attempt before retrying a failed recording.\n    const { error: previousTranscriptError } = await admin.from("meeting_transcripts").delete().eq("recording_id", recordingId);\n    if (previousTranscriptError) throw previousTranscriptError;\n\n    const { data: storedFile, error: downloadError } = await admin.storage.from("meeting-media").download(recording.storage_path);
+    // Remove an earlier partial attempt before retrying a failed recording.
+    const { error: previousTranscriptError } = await admin.from("meeting_transcripts").delete().eq("recording_id", recordingId);
+    if (previousTranscriptError) throw previousTranscriptError;
+
+    const { data: storedFile, error: downloadError } = await admin.storage.from("meeting-media").download(recording.storage_path);
     if (downloadError || !storedFile) throw downloadError ?? new Error("The uploaded recording could not be downloaded.");
     const inputFile = new File([storedFile], recording.original_filename || "meeting-recording", { type: recording.mime_type || "application/octet-stream" });
     const transcript = (await transcribe(inputFile)).trim();

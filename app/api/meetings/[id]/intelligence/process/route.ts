@@ -39,8 +39,15 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       return NextResponse.json({ error: "This recording has already been processed. Replace it or upload another recording to run a new analysis." }, { status: 409 });
     }
 
-    const { error: startError } = await admin.from("meeting_recordings").update({ status: "transcribing", error_message: null, updated_at: new Date().toISOString() }).eq("id", recordingId);
+    // Claim the recording with a conditional update so two requests cannot process it at once.
+    const { data: claimed, error: startError } = await admin.from("meeting_recordings")
+      .update({ status: "transcribing", error_message: null, updated_at: new Date().toISOString() })
+      .eq("id", recordingId)
+      .eq("status", recording.status)
+      .select("id")
+      .maybeSingle();
     if (startError) throw startError;
+    if (!claimed) return NextResponse.json({ error: "This recording is already being processed. Refresh and try again." }, { status: 409 });
 
     // Remove an earlier partial attempt before retrying a failed recording.
     const { error: previousTranscriptError } = await admin.from("meeting_transcripts").delete().eq("recording_id", recordingId);

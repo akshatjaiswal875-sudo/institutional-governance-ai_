@@ -9,21 +9,32 @@ type UserRole = (typeof USER_ROLES)[number];
 function clean(value: unknown) { return typeof value === "string" ? value.trim() : ""; }
 function parseMeetingRequest(message: string) {
   const lower = message.toLowerCase();
-  const date = lower.includes("tomorrow") ? new Date(Date.now() + 86400000) : lower.includes("today") ? new Date() : null;
+  const nextWeek = /\bnext\s+week\b/.test(lower);
+  const today = /\btoday\b/.test(lower);
+  const tomorrow = /\btomorrow\b/.test(lower);
+  const dateMatch = message.match(/\b(\d{4}-\d{2}-\d{2})\b/);
   const timeMatch = message.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i) ?? message.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
   let dateTime: string | null = null;
-  if (date && timeMatch) {
+  if ((today || tomorrow || dateMatch) && timeMatch) {
+    const base = dateMatch ? new Date(`${dateMatch[1]}T12:00:00+05:30`) : new Date();
+    if (tomorrow) base.setDate(base.getDate() + 1);
     let hour = Number(timeMatch[1]); const minute = Number(timeMatch[2] ?? 0); const meridiem = timeMatch[3]?.toLowerCase();
     if (meridiem === "pm" && hour < 12) hour += 12; if (meridiem === "am" && hour === 12) hour = 0;
-    const ist = new Date(date.toLocaleString("en-US", { timeZone: "Asia/Kolkata" })); ist.setHours(hour, minute, 0, 0);
-    dateTime = `${ist.getFullYear()}-${String(ist.getMonth() + 1).padStart(2, "0")}-${String(ist.getDate()).padStart(2, "0")}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00+05:30`;
+    const localDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(base);
+    dateTime = `${localDate}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00+05:30`;
   }
-  const withMatch = message.match(/\bwith\s+(.+?)(?=\s+(?:tomorrow|today|on|at|in|to discuss|about|regarding)\b|[,.]|$)/i);
-  const topicMatch = message.match(/\b(?:to discuss|about|regarding)\s+(.+?)(?:[,.]|$)/i);
-  const locationMatch = message.match(/\b(?:at|in)\s+([^,.]+?)(?=\s+(?:tomorrow|today|to discuss|about|regarding|at)\b|[,.]|$)/i);
-  const participantQuery = clean(withMatch?.[1]).replace(/^the\s+/i, "");
+  const withMatch = message.match(/\bwith\s+(.+?)(?=\s+(?:for|to discuss|about|regarding|tomorrow|today|next week|on|at|in)\b|[,.]|$)/i);
+  const topicMatch = message.match(/\b(?:for|to discuss|about|regarding)\s+(.+?)(?=\s+(?:tomorrow|today|next week|on|at)\b|[,.]|$)/i);
+  const locationMatch = message.match(/\bat\s+([^,.]+?)(?=\s+(?:tomorrow|today|next week|to discuss|about|regarding)\b|[,.]|$)/i);
+  let participantQuery = clean(withMatch?.[1]).replace(/^(?:the|all)\s+/i, "");
+  const aliases: Record<string, string> = { hods: "HOD", "heads of departments": "HOD", faculty: "Faculty / Officer", faculties: "Faculty / Officer", "meeting secretary": "Meeting Secretary", coordinators: "Coordinator", members: "Member" };
+  participantQuery = aliases[participantQuery.toLowerCase()] ?? participantQuery;
   const topic = clean(topicMatch?.[1]);
-  return { title: topic ? `${topic} Meeting` : participantQuery ? `Meeting with ${participantQuery}` : "New Meeting", date: dateTime, location: clean(locationMatch?.[1]) || null, participantQuery, topic };
+  return {
+    title: topic ? `${topic} Meeting` : participantQuery ? `Meeting with ${participantQuery}` : "New Meeting",
+    date: dateTime, location: clean(locationMatch?.[1]) || null, participantQuery, topic,
+    windowHint: nextWeek ? "next_week" : "next_7_days",
+  };
 }
 function ilikePattern(value: string) { return `%${value.replace(/[\\%_]/g, (char) => `\\${char}`)}%`; }
 function asRole(value: string): UserRole | null { return (USER_ROLES as readonly string[]).includes(value) ? value as UserRole : null; }
@@ -36,7 +47,7 @@ export async function POST(request: Request) {
     if (action === "prepare") {
       const message = clean(body?.message); if (!message) return NextResponse.json({ error: "Describe the meeting first." }, { status: 400 });
       const draft = parseMeetingRequest(message); const needs: string[] = [];
-      if (!draft.date) needs.push("date and time"); if (!draft.participantQuery) needs.push("participants");
+      if (!draft.participantQuery) needs.push("participants");
       let participants: any[] = [];
       let usedFallback = false;
       if (draft.participantQuery) {

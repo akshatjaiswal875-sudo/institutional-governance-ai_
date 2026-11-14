@@ -1,7 +1,7 @@
 export type AvailabilityRow = { user_id: string; day_of_week: number; start_time: string; end_time: string; available: boolean };
 export type PreferenceRow = { user_id: string; timezone: string; preferred_start_time: string | null; preferred_end_time: string | null; default_duration_minutes: number; buffer_minutes: number; max_meetings_per_day: number };
 export type UnavailabilityRow = { user_id: string; starts_at: string; ends_at: string };
-export type BusyItem = { user_id: string; start: number; end: number; source: "event" | "meeting" };
+export type BusyItem = { user_id: string; start: number; end: number; source: "event" | "meeting" | "timetable" };
 
 const weekdays: Record<string, number> = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 };
 export function localWindow(epoch: number, timezone: string) {

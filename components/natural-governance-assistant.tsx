@@ -11,7 +11,7 @@ async function api<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 type Message = { role: "user" | "assistant"; content: string };
-type ActionDraft = { title: string; date: string | null; location: string | null; participantQuery: string; topic: string };
+type ActionDraft = { title: string; date: string | null; location: string | null; participantQuery: string; topic: string; windowHint?: "next_week" | "next_7_days" };
 type Participant = { id: string; email: string; role: string; department?: string | null };
 type BestTimeSlot = { start: string; end: string; availableCount: number; participantCount: number; score: number; reason: string };
 type BestTimeResult = { recommended: BestTimeSlot | null; alternatives: BestTimeSlot[]; provider: "gemini" | "openai" | "deterministic" | "none"; searchedFrom: string; searchedUntil: string; durationMinutes: number; participantCount: number };
@@ -74,6 +74,24 @@ export function NaturalGovernanceAssistant() {
   const [bestTimeResult, setBestTimeResult] = useState<BestTimeResult | null>(null);
   const [meetingDialogOpen, setMeetingDialogOpen] = useState(false);
   const [meetingPrompt, setMeetingPrompt] = useState("");
+  const [timetableFile, setTimetableFile] = useState<File | null>(null);
+  const [uploadingTimetable, setUploadingTimetable] = useState(false);
+
+  async function uploadTimetable() {
+    if (!timetableFile || uploadingTimetable) return;
+    setUploadingTimetable(true); setError("");
+    try {
+      const form = new FormData(); form.append("file", timetableFile);
+      const response = await fetch("/api/calendar/timetable/import", { method: "POST", body: form });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Timetable upload failed.");
+      setMessages(prev => [...prev, { role: "assistant", content: `Imported ${result.imported} timetable rows from ${result.source}. ${result.skipped ? `${result.skipped} invalid rows were skipped.` : "All rows were imported successfully."}` }]);
+      setTimetableFile(null);
+      const picker = document.getElementById("institutional-timetable-file") as HTMLInputElement | null;
+      if (picker) picker.value = "";
+    } catch (e) { setError(e instanceof Error ? e.message : "Unable to upload timetable."); }
+    finally { setUploadingTimetable(false); }
+  }
 
   async function ask(text: string) {
     const message = text.trim(); if (!message || busy) return;
@@ -141,7 +159,14 @@ export function NaturalGovernanceAssistant() {
       </section>
       <aside className="space-y-4">
         <div className="card p-5"><h2 className="font-semibold">Admin quick action</h2><p className="mt-2 text-sm text-slate-400">Super Admins can create a meeting by describing it naturally.</p><button onClick={() => { setError(""); setMeetingDialogOpen(true); }} className="btn btn-primary mt-4 inline-flex items-center gap-2" disabled={busy}><CalendarPlus size={17}/>Create meeting with AI</button></div>
-        {draft && <div className="card p-5"><h2 className="font-semibold">Review meeting</h2><div className="mt-3 space-y-2 text-sm"><p><b>Title:</b> {draft.title}</p><p><b>Date:</b> {draft.date ? new Date(draft.date).toLocaleString("en-IN", { dateStyle: "full", timeStyle: "short" }) : "Missing"}</p><p><b>Location:</b> {draft.location ?? "Not specified"}</p><p><b>Participants:</b> {draft.participantQuery || "Not specified"}</p>{draft.topic && <p><b>Agenda:</b> {draft.topic}</p>}</div>
+        <div className="card p-5">
+          <h2 className="font-semibold">Institution timetable</h2>
+          <p className="mt-2 text-sm text-slate-400">Upload the Excel timetable so lectures, faculty periods, rooms and institutional events are blocked during AI scheduling.</p>
+          <p className="mt-2 text-xs text-slate-500">Required columns: Date, Start Time, End Time, Subject/Title. Optional: Type, Department, Faculty Email, Room.</p>
+          <input id="institutional-timetable-file" type="file" accept=".xlsx,.xls,.csv" onChange={e => setTimetableFile(e.target.files?.[0] ?? null)} className="mt-3 block w-full text-xs text-slate-400 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-800 file:px-3 file:py-2 file:text-slate-200"/>
+          <button onClick={() => void uploadTimetable()} disabled={!timetableFile || uploadingTimetable} className="btn btn-secondary mt-3 w-full">{uploadingTimetable ? "Importing timetable…" : "Upload timetable"}</button>
+        </div>
+        {draft && <div className="card p-5"><h2 className="font-semibold">Review meeting</h2><div className="mt-3 space-y-2 text-sm"><p><b>Title:</b> {draft.title}</p><p><b>AI-selected time:</b> {draft.date ? new Date(draft.date).toLocaleString("en-IN", { dateStyle: "full", timeStyle: "short" }) : findingBestTime ? "Checking calendars…" : "Not selected yet"}</p><p><b>Location:</b> {draft.location ?? "Not specified"}</p><p><b>Participants:</b> {draft.participantQuery || "Not specified"}</p>{draft.topic && <p><b>Agenda:</b> {draft.topic}</p>}</div>
           {participants.length > 0 && <div className="mt-4 max-h-48 space-y-2 overflow-auto">{participants.map(p => <label key={p.id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={selected.includes(p.id)} onChange={e => { setSelected(v => e.target.checked ? [...v, p.id] : v.filter(id => id !== p.id)); setBestTimeResult(null); }}/><span>{p.email}{p.department ? ` · ${p.department}` : ""}</span></label>)}</div>}
           {participants.length === 0 && draft.participantQuery && <p className="mt-4 text-sm text-amber-300">No matching participant was found. Try a department such as Faculty or an exact user email.</p>}
           <button onClick={() => void findBestTime()} disabled={busy || findingBestTime || !selected.length} className="btn btn-secondary mt-4 w-full inline-flex items-center justify-center gap-2"><Sparkles size={16}/>{findingBestTime ? "Analyzing calendars..." : "Find Best Time ✨"}</button>
@@ -154,9 +179,9 @@ export function NaturalGovernanceAssistant() {
 
     {meetingDialogOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-labelledby="meeting-dialog-title" onMouseDown={e => { if (e.target === e.currentTarget && !busy) setMeetingDialogOpen(false); }}>
       <div className="w-full max-w-2xl rounded-2xl border border-slate-700 bg-slate-950 p-6 shadow-2xl">
-        <div className="flex items-start justify-between gap-4"><div><h2 id="meeting-dialog-title" className="text-xl font-semibold">Create meeting with AI</h2><p className="mt-1 text-sm text-slate-400">Describe the meeting naturally. AI will extract the date, time, topic, location and participant search.</p></div><button type="button" className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white" onClick={() => setMeetingDialogOpen(false)} disabled={busy} aria-label="Close"><X size={20}/></button></div>
-        <textarea autoFocus value={meetingPrompt} onChange={e => setMeetingPrompt(e.target.value)} className="input mt-5 min-h-36 w-full resize-y" placeholder="Example: Create a meeting with Faculty tomorrow at 11 AM at AV Hall to discuss the annual budget." disabled={busy}/>
-        <div className="mt-3 rounded-lg bg-slate-900 p-3 text-xs text-slate-400">Tip: use a participant department (Faculty), supported role (Member), or exact email. The system will show the matching users before anything is created.</div>
+        <div className="flex items-start justify-between gap-4"><div><h2 id="meeting-dialog-title" className="text-xl font-semibold">Create meeting with AI</h2><p className="mt-1 text-sm text-slate-400">Describe the purpose and participants. AI will find a suitable time from calendars and uploaded timetables—you do not need to provide a time.</p></div><button type="button" className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white" onClick={() => setMeetingDialogOpen(false)} disabled={busy} aria-label="Close"><X size={20}/></button></div>
+        <textarea autoFocus value={meetingPrompt} onChange={e => setMeetingPrompt(e.target.value)} className="input mt-5 min-h-36 w-full resize-y" placeholder="Example: Arrange a meeting with all HODs next week to discuss academic planning. AI will find the best available time." disabled={busy}/>
+        <div className="mt-3 rounded-lg bg-slate-900 p-3 text-xs text-slate-400">Tip: mention a department (Mechanical), role (HOD), or exact email. The system will identify participants and automatically search for a common free slot. You can review the suggested time before sending invitations.</div>
         <div className="mt-5 flex justify-end gap-3"><button type="button" className="btn btn-secondary" onClick={() => setMeetingDialogOpen(false)} disabled={busy}>Cancel</button><button type="button" className="btn btn-primary" onClick={async () => { if (!meetingPrompt.trim()) return; const ok = await prepareMeeting(meetingPrompt); if (ok) setMeetingDialogOpen(false); }} disabled={busy || !meetingPrompt.trim()}>{busy ? "Preparing..." : "Generate meeting draft"}</button></div>
       </div>
     </div>}

@@ -82,7 +82,7 @@ export async function POST(request: Request) {
     // A meeting can begin before the requested search window and still overlap it.
     // Derive the earliest possible start from the longest known agenda duration,
     // using the same 60-minute fallback as the busy-interval calculation below.
-    const longestExistingMeetingMinutes = Math.max(DEFAULT_DURATION_MINUTES, ...agendaMinutesByMeeting.values());
+    const longestExistingMeetingMinutes = [...agendaMinutesByMeeting.values()].reduce((longest, minutes) => Math.max(longest, minutes), DEFAULT_DURATION_MINUTES);
     const earliestMeetingStart = getMeetingQueryStart(startDate, longestExistingMeetingMinutes, TIME_ZONE_OFFSET);
     let meetings: Array<{ id: string; date: string; created_by: string; status: string | null }> = [];
     if (meetingIds.length) {

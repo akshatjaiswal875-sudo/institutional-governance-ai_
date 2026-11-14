@@ -123,6 +123,6 @@ export function SchedulingProfile() {
     </section>
 
     {(error || message) && <p role="status" className={`rounded-xl border px-4 py-3 text-sm ${error ? "border-rose-200 bg-rose-50 text-rose-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>{error || message}</p>}
-    <div className="flex justify-end"><button onClick={save} disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-blue-700 px-5 py-3 text-sm font-bold text-white hover:brightness-110 disabled:opacity-50"><Save size={16}/>{saving ? "Saving profile…" : "Save scheduling profile"}</button></div>
+    <div className="flex justify-end"><button onClick={save} disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-blue-700 px-5 py-3 text-sm font-bold !text-white hover:brightness-110 disabled:opacity-50"><Save size={16}/>{saving ? "Saving profile…" : "Save scheduling profile"}</button></div>
   </div>;
 }

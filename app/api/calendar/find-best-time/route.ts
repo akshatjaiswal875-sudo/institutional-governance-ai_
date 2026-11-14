@@ -15,7 +15,7 @@ type UserRow = { id: string; email: string; role: string; department: string | n
 type AvailabilityRow = { user_id: string; day_of_week: number; start_time: string; end_time: string; available: boolean };
 type PreferenceRow = { user_id: string; timezone: string; preferred_start_time: string | null; preferred_end_time: string | null; default_duration_minutes: number; buffer_minutes: number; max_meetings_per_day: number };
 type UnavailabilityRow = { user_id: string; starts_at: string; ends_at: string };
-type BusyItem = { user_id: string; start: number; end: number; source: "event" | "meeting" };
+type BusyItem = { user_id: string; start: number; end: number; source: "event" | "meeting" | "timetable" };
 type Candidate = { start: string; end: string; startEpoch: number; endEpoch: number; availableCount: number; participantCount: number; score: number; reason: string };
 type AIRankingItem = { score?: number; reason?: string; index?: number };
 
@@ -64,15 +64,16 @@ export async function POST(request: Request) {
     const startDate = preferredDate || (searchWindow === "next_week" ? nextMonday : today);
     const endDate = addDays(startDate, searchDays);
     const admin = createAdminClient();
-    const [{ data: users, error: usersError }, { data: availability, error: availabilityError }, { data: preferences, error: preferencesError }, { data: exceptions, error: exceptionsError }, { data: events, error: eventsError }, { data: participantLinks, error: participantLinksError }] = await Promise.all([
+    const [{ data: users, error: usersError }, { data: availability, error: availabilityError }, { data: preferences, error: preferencesError }, { data: exceptions, error: exceptionsError }, { data: events, error: eventsError }, { data: participantLinks, error: participantLinksError }, { data: timetableRows, error: timetableError }] = await Promise.all([
       admin.from("users").select("id,email,role,department").in("id", participantIds),
       admin.from("user_availability").select("user_id,day_of_week,start_time,end_time,available").in("user_id", participantIds),
       admin.from("user_scheduling_preferences").select("user_id,timezone,preferred_start_time,preferred_end_time,default_duration_minutes,buffer_minutes,max_meetings_per_day").in("user_id", participantIds),
       admin.from("user_unavailability").select("user_id,starts_at,ends_at").in("user_id", participantIds).lt("starts_at", `${endDate}T00:00:00${TIME_ZONE_OFFSET}`).gt("ends_at", `${startDate}T00:00:00${TIME_ZONE_OFFSET}`),
       admin.from("events").select("id,organizer_id,start_time,end_time,status").in("organizer_id", participantIds).neq("status", "Cancelled").lt("start_time", `${endDate}T00:00:00${TIME_ZONE_OFFSET}`).gt("end_time", `${startDate}T00:00:00${TIME_ZONE_OFFSET}`).is("deleted_at", null),
       admin.from("participants").select("meeting_id,user_id,attendance_status").in("user_id", participantIds),
+      admin.from("institutional_timetable_entries").select("starts_at,ends_at,department,faculty_email").lt("starts_at", `${endDate}T00:00:00${TIME_ZONE_OFFSET}`).gt("ends_at", `${startDate}T00:00:00${TIME_ZONE_OFFSET}`),
     ]);
-    if (usersError) throw usersError; if (availabilityError) throw availabilityError; if (preferencesError) throw preferencesError; if (exceptionsError) throw exceptionsError; if (eventsError) throw eventsError; if (participantLinksError) throw participantLinksError;
+    if (usersError) throw usersError; if (availabilityError) throw availabilityError; if (preferencesError) throw preferencesError; if (exceptionsError) throw exceptionsError; if (eventsError) throw eventsError; if (participantLinksError) throw participantLinksError; if (timetableError) throw timetableError;
     if (!users || users.length !== participantIds.length) return NextResponse.json({ error: "One or more selected participants could not be found." }, { status: 400 });
     const preferenceByUser = new Map<string, PreferenceRow>();
     for (const row of (preferences ?? []) as PreferenceRow[]) preferenceByUser.set(row.user_id, row);
@@ -94,8 +95,16 @@ export async function POST(request: Request) {
       }
     }
     const activeParticipantLinks = (participantLinks ?? []).filter(link => String(link.attendance_status ?? "").toLowerCase() !== "declined");
+    const timetableBusy: BusyItem[] = (timetableRows ?? []).flatMap(row => {
+      const start = new Date(row.starts_at).getTime(); const end = new Date(row.ends_at).getTime();
+      return users.filter(user =>
+        (row.faculty_email && user.email.toLowerCase() === String(row.faculty_email).toLowerCase()) ||
+        (row.department && user.department?.toLowerCase() === String(row.department).toLowerCase())
+      ).map(user => ({ user_id: user.id, start, end, source: "timetable" as const }));
+    });
     const busy: BusyItem[] = [
       ...(events ?? []).map(event => ({ user_id: event.organizer_id, start: new Date(event.start_time).getTime(), end: new Date(event.end_time).getTime(), source: "event" as const })),
+      ...timetableBusy,
       ...(meetings ?? []).flatMap(meeting => {
         const linkedUsers = [...new Set([meeting.created_by, ...activeParticipantLinks.filter(link => link.meeting_id === meeting.id).map(link => link.user_id)])];
         const existingDuration = agendaMinutesByMeeting.get(meeting.id) || DEFAULT_DURATION_MINUTES;

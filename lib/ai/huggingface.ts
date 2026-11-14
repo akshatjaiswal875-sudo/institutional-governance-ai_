@@ -154,7 +154,7 @@ function formatRecordDate(value: unknown): string {
 
 function readableRecordFallback(context: string): string {
   const records: Array<{ kind: string; id: string; data: Record<string, unknown> }> = [];
-  const pattern = /^\\[(meeting|event|policy):([^\\]]+)\\]\\s*(\\{.*\\})\\s*$/gm;
+  const pattern = /^\[(meeting|event|policy):([^\]]+)\]\s*(\{.*\})\s*$/gm;
   for (const match of context.matchAll(pattern)) {
     try {
       const data = JSON.parse(match[3]) as Record<string, unknown>;

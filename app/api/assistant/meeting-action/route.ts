@@ -4,7 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { recordAudit } from "@/lib/audit";
 import { sendMeetingInvitation } from "@/lib/invitations";
 
-const USER_ROLES = ["Super Admin", "Meeting Secretary", "Faculty / Officer", "Member", "Auditor"] as const;
+const USER_ROLES = ["Super Admin", "Director", "Principal", "HOD", "Coordinators", "Meeting Secretary", "Faculty / Officer", "Member", "Auditor"] as const;
 type UserRole = (typeof USER_ROLES)[number];
 function clean(value: unknown) { return typeof value === "string" ? value.trim() : ""; }
 function parseMeetingRequest(message: string) {
@@ -27,7 +27,7 @@ function parseMeetingRequest(message: string) {
   const topicMatch = message.match(/\b(?:for|to discuss|about|regarding)\s+(.+?)(?=\s+(?:tomorrow|today|next week|on|at)\b|[,.]|$)/i);
   const locationMatch = message.match(/\bat\s+([^,.]+?)(?=\s+(?:tomorrow|today|next week|to discuss|about|regarding)\b|[,.]|$)/i);
   let participantQuery = clean(withMatch?.[1]).replace(/^(?:the|all)\s+/i, "");
-  const aliases: Record<string, string> = { hods: "HOD", "heads of departments": "HOD", faculty: "Faculty / Officer", faculties: "Faculty / Officer", "meeting secretary": "Meeting Secretary", coordinators: "Coordinator", members: "Member" };
+  const aliases: Record<string, string> = { hod: "HOD", hods: "HOD", "head of department": "HOD", "heads of departments": "HOD", faculty: "Faculty / Officer", faculties: "Faculty / Officer", "meeting secretary": "Meeting Secretary", coordinator: "Coordinators", coordinators: "Coordinators", members: "Member" };
   participantQuery = aliases[participantQuery.toLowerCase()] ?? participantQuery;
   const topic = clean(topicMatch?.[1]);
   return {

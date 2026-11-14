@@ -81,7 +81,8 @@ export async function GET() {
 export async function PUT(request: Request) {
   try {
     const { supabase, profile } = await requireUser();
-    const raw = await request.json();
+    let raw: unknown;
+    try { raw = await request.json(); } catch { return NextResponse.json({ error: "Request body must be valid JSON." }, { status: 400 }); }
     const parsed = profileSchema.safeParse(raw);
     if (!parsed.success) return NextResponse.json({ error: "Please correct the highlighted scheduling profile fields.", details: parsed.error.flatten() }, { status: 400 });
     const { availability, preferences, unavailability } = parsed.data;

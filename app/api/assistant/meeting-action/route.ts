@@ -9,11 +9,11 @@ type UserRole = (typeof USER_ROLES)[number];
 function clean(value: unknown) { return typeof value === "string" ? value.trim() : ""; }
 function parseMeetingRequest(message: string) {
   const lower = message.toLowerCase();
-  const nextWeek = /\\bnext\\s+week\\b/.test(lower);
-  const today = /\\btoday\\b/.test(lower);
-  const tomorrow = /\\btomorrow\\b/.test(lower);
-  const dateMatch = message.match(/\\b(\\d{4}-\\d{2}-\\d{2})\\b/);
-  const timeMatch = message.match(/\\b(\\d{1,2})(?::(\\d{2}))?\\s*(am|pm)\\b/i) ?? message.match(/\\b([01]?\\d|2[0-3]):([0-5]\\d)\\b/);
+  const nextWeek = /\bnext\s+week\b/.test(lower);
+  const today = /\btoday\b/.test(lower);
+  const tomorrow = /\btomorrow\b/.test(lower);
+  const dateMatch = message.match(/\b(\d{4}-\d{2}-\d{2})\b/);
+  const timeMatch = message.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i) ?? message.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
   let dateTime: string | null = null;
   if ((today || tomorrow || dateMatch) && timeMatch) {
     const base = dateMatch ? new Date(`${dateMatch[1]}T12:00:00+05:30`) : new Date();
@@ -23,10 +23,10 @@ function parseMeetingRequest(message: string) {
     const localDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(base);
     dateTime = `${localDate}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00+05:30`;
   }
-  const withMatch = message.match(/\\bwith\\s+(.+?)(?=\\s+(?:for|to discuss|about|regarding|tomorrow|today|next week|on|at|in)\\b|[,.]|$)/i);
-  const topicMatch = message.match(/\\b(?:for|to discuss|about|regarding)\\s+(.+?)(?=\\s+(?:tomorrow|today|next week|on|at)\\b|[,.]|$)/i);
-  const locationMatch = message.match(/\\bat\\s+([^,.]+?)(?=\\s+(?:tomorrow|today|next week|to discuss|about|regarding)\\b|[,.]|$)/i);
-  let participantQuery = clean(withMatch?.[1]).replace(/^(?:the|all)\\s+/i, "");
+  const withMatch = message.match(/\bwith\s+(.+?)(?=\s+(?:for|to discuss|about|regarding|tomorrow|today|next week|on|at|in)\b|[,.]|$)/i);
+  const topicMatch = message.match(/\b(?:for|to discuss|about|regarding)\s+(.+?)(?=\s+(?:tomorrow|today|next week|on|at)\b|[,.]|$)/i);
+  const locationMatch = message.match(/\bat\s+([^,.]+?)(?=\s+(?:tomorrow|today|next week|to discuss|about|regarding)\b|[,.]|$)/i);
+  let participantQuery = clean(withMatch?.[1]).replace(/^(?:the|all)\s+/i, "");
   const aliases: Record<string, string> = { hods: "HOD", "heads of departments": "HOD", faculty: "Faculty / Officer", faculties: "Faculty / Officer", "meeting secretary": "Meeting Secretary", coordinators: "Coordinator", members: "Member" };
   participantQuery = aliases[participantQuery.toLowerCase()] ?? participantQuery;
   const topic = clean(topicMatch?.[1]);

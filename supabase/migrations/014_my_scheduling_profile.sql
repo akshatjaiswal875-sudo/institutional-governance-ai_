@@ -4,7 +4,7 @@
 create table if not exists public.user_availability (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.users(id) on delete cascade,
-  day_of_week smallint not null check (day_of_week between 0 and 6),
+  day_of_week smallint not null constraint user_availability_day_of_week_range check (day_of_week between 1 and 7),
   start_time time not null,
   end_time time not null,
   available boolean not null default true,

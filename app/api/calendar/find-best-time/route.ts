@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { GoogleGenAI } from "@google/genai";
+import { isParticipantAvailable, localWindow } from "@/lib/calendar/scheduler";
 
 const SEARCH_DAYS = 7;
 const SLOT_STEP_MINUTES = 30;
@@ -25,22 +26,6 @@ function weekdayOneToSeven(dateString: string) { const date = new Date(`${dateSt
 function minutesFromTime(value: string) { const [hours, minutes] = String(value).slice(0, 5).split(":").map(Number); return hours * 60 + minutes; }
 function candidateDateTime(dateString: string, minutes: number) { const hours = Math.floor(minutes / 60).toString().padStart(2, "0"); const mins = (minutes % 60).toString().padStart(2, "0"); return new Date(`${dateString}T${hours}:${mins}:00${TIME_ZONE_OFFSET}`); }
 function overlaps(start: number, end: number, busy: BusyItem[]) { return busy.some(item => start < item.end && end > item.start); }
-function localWindow(epoch: number, timezone: string) {
-  const parts = new Intl.DateTimeFormat("en-US", { timeZone: timezone, weekday: "short", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(epoch));
-  const get = (type: string) => parts.find(part => part.type === type)?.value ?? "";
-  const weekdays: Record<string, number> = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 };
-  return { weekday: weekdays[get("weekday")] ?? 0, date: `${get("year")}-${get("month")}-${get("day")}`, minutes: Number(get("hour")) * 60 + Number(get("minute")) };
-}
-function insideAvailability(startEpoch: number, endEpoch: number, rows: AvailabilityRow[], preference: PreferenceRow) {
-  const start = localWindow(startEpoch, preference.timezone || "Asia/Kolkata");
-  const end = localWindow(endEpoch, preference.timezone || "Asia/Kolkata");
-  if (start.date !== end.date || start.weekday !== end.weekday) return false;
-  const insideWeekly = rows.some(row => row.available && row.day_of_week === start.weekday && start.minutes >= minutesFromTime(row.start_time) && end.minutes <= minutesFromTime(row.end_time));
-  if (!insideWeekly) return false;
-  if (preference.preferred_start_time && start.minutes < minutesFromTime(preference.preferred_start_time)) return false;
-  if (preference.preferred_end_time && end.minutes > minutesFromTime(preference.preferred_end_time)) return false;
-  return true;
-}
 function scoreCandidate(candidate: Omit<Candidate, "score" | "reason">, busy: BusyItem[]) { let score = 100; const startDate = new Date(candidate.startEpoch); const localMinutes = (startDate.getUTCHours() * 60 + startDate.getUTCMinutes() + 330) % (24 * 60); if (localMinutes < 10 * 60) score -= 4; if (localMinutes >= 16 * 60) score -= 6; const adjacentBusy = busy.some(item => Math.abs(item.end - candidate.startEpoch) <= 15 * 60 * 1000 || Math.abs(item.start - candidate.endEpoch) <= 15 * 60 * 1000); if (adjacentBusy) score -= 8; return Math.max(0, score); }
 
 async function rankWithAI(candidates: Candidate[], users: UserRow[]) {
@@ -128,16 +113,10 @@ export async function POST(request: Request) {
           const preference = effectivePreferences.get(user.id)!;
           const userAvailability = availabilityByUser.get(user.id) ?? [];
           const userBusy = busy.filter(item => item.user_id === user.id);
-          const buffer = Number(preference.buffer_minutes || 0) * 60_000;
-          const bufferedBusy = userBusy.map(item => ({ ...item, start: item.start - buffer, end: item.end + buffer }));
-          const userExceptions = exceptionsByUser.get(user.id) ?? [];
-          const localDay = localWindow(startEpoch, preference.timezone || "Asia/Kolkata").date;
-          const meetingsThatDay = userBusy.filter(item => item.source === "meeting" && localWindow(item.start, preference.timezone || "Asia/Kolkata").date === localDay).length;
-          const blockedByException = userExceptions.some(item => startEpoch < new Date(item.ends_at).getTime() && endEpoch > new Date(item.starts_at).getTime());
-          const isAvailable = insideAvailability(startEpoch, endEpoch, userAvailability, preference)
-            && !overlaps(startEpoch, endEpoch, bufferedBusy)
-            && !blockedByException
-            && meetingsThatDay < Number(preference.max_meetings_per_day || 5);
+          const isAvailable = isParticipantAvailable({
+            startEpoch, endEpoch, availability: userAvailability, preference,
+            busy: userBusy, exceptions: exceptionsByUser.get(user.id) ?? [],
+          });
           if (isAvailable) availableCount += 1; else allAvailable = false;
         }
         if (!allAvailable) continue;

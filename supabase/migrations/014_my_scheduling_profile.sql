@@ -52,6 +52,18 @@ alter table public.user_availability enable row level security;
 alter table public.user_scheduling_preferences enable row level security;
 alter table public.user_unavailability enable row level security;
 
+do $
+declare policy_row record;
+begin
+  for policy_row in
+    select policyname from pg_policies
+    where schemaname = 'public' and tablename = 'user_availability'
+  loop
+    execute format('drop policy %I on public.user_availability', policy_row.policyname);
+  end loop;
+end;
+$;
+
 drop policy if exists user_availability_self_manage on public.user_availability;
 create policy user_availability_self_manage on public.user_availability
   for all to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());

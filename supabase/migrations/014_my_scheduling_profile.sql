@@ -52,7 +52,7 @@ alter table public.user_availability enable row level security;
 alter table public.user_scheduling_preferences enable row level security;
 alter table public.user_unavailability enable row level security;
 
-do $
+do $$
 declare policy_row record;
 begin
   for policy_row in
@@ -62,7 +62,7 @@ begin
     execute format('drop policy %I on public.user_availability', policy_row.policyname);
   end loop;
 end;
-$;
+$$;
 
 drop policy if exists user_availability_self_manage on public.user_availability;
 create policy user_availability_self_manage on public.user_availability

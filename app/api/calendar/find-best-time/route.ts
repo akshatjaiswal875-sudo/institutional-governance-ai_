@@ -55,8 +55,13 @@ export async function POST(request: Request) {
     if (participantIds.length > 30) return NextResponse.json({ error: "Select at most 30 participants." }, { status: 400 });
     const durationMinutes = body?.durationMinutes == null ? null : clampDuration(body.durationMinutes);
     const preferredDate = typeof body?.preferredDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.preferredDate) ? body.preferredDate : null;
-    const searchDays = preferredDate ? 1 : SEARCH_DAYS;
-    const startDate = preferredDate || isoDateInIndia();
+    const searchWindow = body?.searchWindow === "next_week" ? "next_week" : "next_7_days";
+    const today = isoDateInIndia();
+    const todayWeekday = weekdayOneToSeven(today);
+    const daysToNextMonday = todayWeekday === 1 ? 7 : 8 - todayWeekday;
+    const nextMonday = addDays(today, daysToNextMonday);
+    const searchDays = preferredDate ? 1 : searchWindow === "next_week" ? 5 : SEARCH_DAYS;
+    const startDate = preferredDate || (searchWindow === "next_week" ? nextMonday : today);
     const endDate = addDays(startDate, searchDays);
     const admin = createAdminClient();
     const [{ data: users, error: usersError }, { data: availability, error: availabilityError }, { data: preferences, error: preferencesError }, { data: exceptions, error: exceptionsError }, { data: events, error: eventsError }, { data: participantLinks, error: participantLinksError }] = await Promise.all([
@@ -126,7 +131,7 @@ export async function POST(request: Request) {
     const ranked = await rankWithAI(candidates, users);
     const sorted = ranked.candidates.slice(0, 10);
     const [recommended, ...alternatives] = sorted;
-    return NextResponse.json({ data: { recommended: recommended ?? null, alternatives, provider: ranked.provider, searchedFrom: startDate, searchedUntil: endDate, durationMinutes: effectiveDuration, participantCount: users.length, participants: users.map(user => ({ id: user.id, email: user.email, role: user.role, department: user.department })) } });
+    return NextResponse.json({ data: { recommended: recommended ?? null, alternatives, provider: ranked.provider, searchedFrom: startDate, searchedUntil: endDate, searchWindow, durationMinutes: effectiveDuration, participantCount: users.length, participants: users.map(user => ({ id: user.id, email: user.email, role: user.role, department: user.department })) } });
   } catch (error) {
     console.error("find-best-time error", error);
     return NextResponse.json({ error: "Unable to calculate meeting availability." }, { status: 500 });

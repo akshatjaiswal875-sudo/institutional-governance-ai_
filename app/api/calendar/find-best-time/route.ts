@@ -65,9 +65,9 @@ export async function POST(request: Request) {
     ]);
     if (usersError) throw usersError; if (availabilityError) throw availabilityError; if (eventsError) throw eventsError; if (participantLinksError) throw participantLinksError;
     if (!users || users.length !== participantIds.length) return NextResponse.json({ error: "One or more selected participants could not be found." }, { status: 400 });
-    const meetingIds = [...new Set((participantLinks ?? []).map(row => row.meeting_id).filter((id): id is string => typeof id === "string"))];
-    let meetings: Array<{ id: string; date: string; created_by: string; status: string | null }> = [];
-    if (meetingIds.length) { const { data, error } = await admin.from("meetings").select("id,date,created_by,status").in("id", meetingIds).gte("date", `${startDate}T00:00:00${TIME_ZONE_OFFSET}`).lt("date", `${endDate}T00:00:00${TIME_ZONE_OFFSET}`); if (error) throw error; meetings = data ?? []; }
+    // Declined invitees do not occupy a participant's calendar.
+    const activeParticipantLinks = (participantLinks ?? []).filter(link => String(link.attendance_status ?? "").toLowerCase() !== "declined");
+    const meetingIds = [...new Set(activeParticipantLinks.map(row => row.meeting_id).filter((id): id is string => typeof id === "string"))];
     const agendaMinutesByMeeting = new Map<string, number>();
     if (meetingIds.length) {
       const { data: agendaRows, error: agendaError } = await admin.from("agenda_items").select("meeting_id,duration_minutes").in("meeting_id", meetingIds);
@@ -77,9 +77,23 @@ export async function POST(request: Request) {
         if (Number.isFinite(minutes) && minutes > 0) agendaMinutesByMeeting.set(row.meeting_id, (agendaMinutesByMeeting.get(row.meeting_id) ?? 0) + minutes);
       }
     }
-    const activeParticipantLinks = (participantLinks ?? []).filter(link => String(link.attendance_status ?? "").toLowerCase() !== "declined");
+
+    // A meeting can begin before the requested search window and still overlap it.
+    // Derive the earliest possible start from the longest known agenda duration,
+    // using the same 60-minute fallback as the busy-interval calculation below.
+    const longestExistingMeetingMinutes = Math.max(DEFAULT_DURATION_MINUTES, ...agendaMinutesByMeeting.values());
+    const searchWindowStart = new Date(`${startDate}T00:00:00${TIME_ZONE_OFFSET}`).getTime();
+    const earliestMeetingStart = new Date(searchWindowStart - longestExistingMeetingMinutes * 60_000).toISOString();
+    let meetings: Array<{ id: string; date: string; created_by: string; status: string | null }> = [];
+    if (meetingIds.length) {
+      const { data, error } = await admin.from("meetings").select("id,date,created_by,status")
+        .in("id", meetingIds).gte("date", earliestMeetingStart)
+        .lt("date", `${endDate}T00:00:00${TIME_ZONE_OFFSET}`);
+      if (error) throw error;
+      meetings = data ?? [];
+    }
     const busy: BusyItem[] = [
-      ...(events ?? []).map(event => ({ user_id: event.organizer_id, start: new Date(event.start_time).getTime(), end: new Date(event.end_time).getTime(), source: "event" as const })),
+      ...(events ?? []).map(event => ({ user_id: event.organizer_id, start: new Date(event.start_time).getTime(), end: new Date(event.end_time).getTime(), source: "event" as const })).filter(item => Number.isFinite(item.start) && Number.isFinite(item.end) && item.end > item.start),
       ...(meetings ?? []).flatMap(meeting => {
         const linkedUsers = activeParticipantLinks.filter(link => link.meeting_id === meeting.id).map(link => link.user_id);
         const existingDuration = agendaMinutesByMeeting.get(meeting.id) || DEFAULT_DURATION_MINUTES;

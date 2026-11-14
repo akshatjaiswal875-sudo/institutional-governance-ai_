@@ -101,13 +101,38 @@ export function NaturalGovernanceAssistant() {
     finally { setBusy(false); }
   }
 
+  async function findBestTimeFor(participantIds: string[], searchWindow: "next_week" | "next_7_days" = "next_7_days") {
+    if (!participantIds.length || findingBestTime) return null;
+    setFindingBestTime(true); setError("");
+    try {
+      const result = await api<BestTimeResult>("/api/calendar/find-best-time", { method: "POST", body: JSON.stringify({ participantIds, searchWindow }) });
+      setBestTimeResult(result);
+      if (result.recommended) {
+        setDraft(current => current ? { ...current, date: result.recommended!.start } : current);
+      } else {
+        setError(`No common free slot was found from ${result.searchedFrom} to ${result.searchedUntil}. Check participant availability and uploaded timetable entries.`);
+      }
+      return result;
+    } catch (e) { setError(e instanceof Error ? e.message : "Unable to find a common free time."); return null; }
+    finally { setFindingBestTime(false); }
+  }
+
   async function prepareMeeting(message: string) {
     setBusy(true); setError(""); setBestTimeResult(null);
     try {
       const result = await api<any>("/api/assistant/meeting-action", { method: "POST", body: JSON.stringify({ action: "prepare", message }) });
       const hasNeeds = Boolean(result.needs?.length);
-      if (hasNeeds) setError(`Meeting needs: ${result.needs.join(", ")}. Try mentioning a date/time and a participant department, role, or email.`);
-      setDraft(result.draft ?? null); setParticipants(result.participants ?? []); setSelected([]);
+      const nextDraft = result.draft ?? null;
+      const matchedParticipants = result.participants ?? [];
+      const autoSelectedIds = !result.usedFallback ? matchedParticipants.map((participant: Participant) => participant.id) : [];
+      setDraft(nextDraft); setParticipants(matchedParticipants); setSelected(autoSelectedIds);
+      if (hasNeeds) {
+        setError(`Meeting needs: ${result.needs.join(", ")}. Mention a participant role, department, or exact email.`);
+      } else if (nextDraft && !nextDraft.date && autoSelectedIds.length) {
+        // For unambiguous role/department matches, automatically calculate and
+        // attach the recommended time. The user reviews it before confirming.
+        await findBestTimeFor(autoSelectedIds, nextDraft.windowHint ?? "next_7_days");
+      }
       return !hasNeeds;
     } catch (e) { setError(e instanceof Error ? e.message : "Unable to prepare meeting."); return false; }
     finally { setBusy(false); }
@@ -115,13 +140,7 @@ export function NaturalGovernanceAssistant() {
 
   async function findBestTime() {
     if (!selected.length || findingBestTime) return;
-    setFindingBestTime(true); setError("");
-    try {
-      const result = await api<BestTimeResult>("/api/calendar/find-best-time", { method: "POST", body: JSON.stringify({ participantIds: selected }) });
-      setBestTimeResult(result);
-      if (!result.recommended) setError("No common free slot was found in the next 7 days. Try fewer participants or a shorter duration.");
-    } catch (e) { setError(e instanceof Error ? e.message : "Unable to find a common free time."); }
-    finally { setFindingBestTime(false); }
+    await findBestTimeFor(selected, draft?.windowHint ?? "next_7_days");
   }
 
   function useBestTime(slot: BestTimeSlot) {

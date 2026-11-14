@@ -73,8 +73,10 @@ small,.text-muted,[class*="text-muted"] { color:var(--muted-text); }
 [class*="text-emerald-300"],[class*="text-emerald-400"] { color:#047857!important; }
 [class*="text-amber-300"],[class*="text-amber-400"] { color:#B45309!important; }
 [class*="text-red-300"],[class*="text-red-400"] { color:#B91C1C!important; }
-[class*="from-slate-900"],[class*="via-slate-950"],[class*="to-slate-950"],[class*="to-cyan-950"],[class*="to-violet-950"],[class*="via-slate-900"],[class*="from-violet-500"] { background-image:linear-gradient(135deg,#0F2342 0%,#1E40AF 100%)!important; }
+[class*="from-slate-900"],[class*="via-slate-950"],[class*="to-slate-950"],[class*="to-cyan-950"],[class*="to-violet-950"],[class*="via-slate-900"],[class*="from-violet-500"] { background-image:linear-gradient(135deg,#EFF6FF 0%,#F8FAFC 100%)!important; }
 [class*="bg-[#050b08]"],[class*="bg-[#061006]"],[class*="bg-[#0a120d]"],[class*="bg-[#0d1711]"],[class*="bg-[#171020]"] { background-color:#F8FAFC!important; background-image:none!important; }
+[class*="bg-violet-"],[class*="bg-purple-"],[class*="bg-cyan-"],[class*="bg-indigo-"] { background-color:#EFF6FF!important; }
+[class*="from-violet-"],[class*="from-purple-"],[class*="from-cyan-"],[class*="to-cyan-"],[class*="to-violet-"] { --tw-gradient-from:#EFF6FF var(--tw-gradient-from-position)!important; --tw-gradient-to:rgb(239 246 255 / 0) var(--tw-gradient-to-position)!important; }
 main { background:transparent!important; color:var(--body-text); }
 .mobile-bottom-nav { position:fixed; left:0; right:0; bottom:0; z-index:50; display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); padding:7px max(8px,env(safe-area-inset-left)) max(7px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-right)); background:rgba(255,255,255,.97); border-top:1px solid var(--soft-border); box-shadow:0 -8px 24px rgba(15,35,66,.08); backdrop-filter:blur(16px); }
 .mobile-bottom-nav-item { min-width:0; min-height:48px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; border:0; background:transparent; color:var(--muted-text); font-size:12px; font-weight:600; text-decoration:none; }

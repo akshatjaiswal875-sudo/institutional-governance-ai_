@@ -38,7 +38,6 @@ const profileSchema = z.object({
 }).superRefine((value, ctx) => {
   const grouped = new Map<number, Array<{ start: number; end: number; index: number }>>();
   value.availability.forEach((row, index) => {
-    if (!row.available) return;
     const start = Number(row.start_time.slice(0, 2)) * 60 + Number(row.start_time.slice(3));
     const end = Number(row.end_time.slice(0, 2)) * 60 + Number(row.end_time.slice(3));
     const rows = grouped.get(row.day_of_week) ?? [];

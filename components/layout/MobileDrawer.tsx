@@ -109,8 +109,8 @@ export function MobileDrawer({ open, onClose }: MobileDrawerProps) {
                 aria-current={active ? "page" : undefined}
                 className={`flex min-h-12 items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-[var(--primary-main)]/30 ${
                   active
-                    ? "bg-gradient-to-r from-violet-100 to-cyan-50 text-[var(--heading)]"
-                    : "text-[var(--body-text)] hover:bg-violet-50/70"
+                    ? "bg-gradient-to-r from-blue-100 to-indigo-50 text-[var(--heading)]"
+                    : "text-[var(--body-text)] hover:bg-blue-50/70"
                 }`}
               >
                 <Icon size={19} className={active ? "text-[var(--primary-main)]" : "text-[var(--muted-text)]"} aria-hidden="true" />
@@ -120,8 +120,8 @@ export function MobileDrawer({ open, onClose }: MobileDrawerProps) {
           })}
         </nav>
 
-        <div className="mt-3 rounded-xl border border-violet-100 bg-violet-50/60 p-3 text-xs leading-5 text-[var(--muted-text)]">
-          Press <kbd className="rounded border border-violet-200 bg-white px-1.5 py-0.5 font-semibold text-[var(--heading)]">Esc</kbd> to close this menu.
+        <div className="mt-3 rounded-xl border border-blue-100 bg-blue-50/60 p-3 text-xs leading-5 text-[var(--muted-text)]">
+          Press <kbd className="rounded border border-blue-200 bg-white px-1.5 py-0.5 font-semibold text-[var(--heading)]">Esc</kbd> to close this menu.
         </div>
       </aside>
     </div>

@@ -74,6 +74,24 @@ export function NaturalGovernanceAssistant() {
   const [bestTimeResult, setBestTimeResult] = useState<BestTimeResult | null>(null);
   const [meetingDialogOpen, setMeetingDialogOpen] = useState(false);
   const [meetingPrompt, setMeetingPrompt] = useState("");
+  const [timetableFile, setTimetableFile] = useState<File | null>(null);
+  const [uploadingTimetable, setUploadingTimetable] = useState(false);
+
+  async function uploadTimetable() {
+    if (!timetableFile || uploadingTimetable) return;
+    setUploadingTimetable(true); setError("");
+    try {
+      const form = new FormData(); form.append("file", timetableFile);
+      const response = await fetch("/api/calendar/timetable/import", { method: "POST", body: form });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Timetable upload failed.");
+      setMessages(prev => [...prev, { role: "assistant", content: `Imported ${result.imported} timetable rows from ${result.source}. ${result.skipped ? `${result.skipped} invalid rows were skipped.` : "All rows were imported successfully."}` }]);
+      setTimetableFile(null);
+      const picker = document.getElementById("institutional-timetable-file") as HTMLInputElement | null;
+      if (picker) picker.value = "";
+    } catch (e) { setError(e instanceof Error ? e.message : "Unable to upload timetable."); }
+    finally { setUploadingTimetable(false); }
+  }
 
   async function ask(text: string) {
     const message = text.trim(); if (!message || busy) return;
@@ -141,6 +159,13 @@ export function NaturalGovernanceAssistant() {
       </section>
       <aside className="space-y-4">
         <div className="card p-5"><h2 className="font-semibold">Admin quick action</h2><p className="mt-2 text-sm text-slate-400">Super Admins can create a meeting by describing it naturally.</p><button onClick={() => { setError(""); setMeetingDialogOpen(true); }} className="btn btn-primary mt-4 inline-flex items-center gap-2" disabled={busy}><CalendarPlus size={17}/>Create meeting with AI</button></div>
+        <div className="card p-5">
+          <h2 className="font-semibold">Institution timetable</h2>
+          <p className="mt-2 text-sm text-slate-400">Upload the Excel timetable so lectures, faculty periods, rooms and institutional events are blocked during AI scheduling.</p>
+          <p className="mt-2 text-xs text-slate-500">Required columns: Date, Start Time, End Time, Subject/Title. Optional: Type, Department, Faculty Email, Room.</p>
+          <input id="institutional-timetable-file" type="file" accept=".xlsx,.xls,.csv" onChange={e => setTimetableFile(e.target.files?.[0] ?? null)} className="mt-3 block w-full text-xs text-slate-400 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-800 file:px-3 file:py-2 file:text-slate-200"/>
+          <button onClick={() => void uploadTimetable()} disabled={!timetableFile || uploadingTimetable} className="btn btn-secondary mt-3 w-full">{uploadingTimetable ? "Importing timetable…" : "Upload timetable"}</button>
+        </div>
         {draft && <div className="card p-5"><h2 className="font-semibold">Review meeting</h2><div className="mt-3 space-y-2 text-sm"><p><b>Title:</b> {draft.title}</p><p><b>AI-selected time:</b> {draft.date ? new Date(draft.date).toLocaleString("en-IN", { dateStyle: "full", timeStyle: "short" }) : findingBestTime ? "Checking calendars…" : "Not selected yet"}</p><p><b>Location:</b> {draft.location ?? "Not specified"}</p><p><b>Participants:</b> {draft.participantQuery || "Not specified"}</p>{draft.topic && <p><b>Agenda:</b> {draft.topic}</p>}</div>
           {participants.length > 0 && <div className="mt-4 max-h-48 space-y-2 overflow-auto">{participants.map(p => <label key={p.id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={selected.includes(p.id)} onChange={e => { setSelected(v => e.target.checked ? [...v, p.id] : v.filter(id => id !== p.id)); setBestTimeResult(null); }}/><span>{p.email}{p.department ? ` · ${p.department}` : ""}</span></label>)}</div>}
           {participants.length === 0 && draft.participantQuery && <p className="mt-4 text-sm text-amber-300">No matching participant was found. Try a department such as Faculty or an exact user email.</p>}

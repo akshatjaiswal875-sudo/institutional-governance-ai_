@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { GoogleGenAI } from "@google/genai";
+import { getMeetingQueryStart, intervalsOverlap, isValidBusyInterval } from "@/lib/calendar-conflicts";
 
 const SEARCH_DAYS = 7;
 const SLOT_STEP_MINUTES = 30;
@@ -22,7 +23,7 @@ function addDays(dateString: string, days: number) { const base = new Date(`${da
 function weekdayOneToSeven(dateString: string) { const date = new Date(`${dateString}T12:00:00${TIME_ZONE_OFFSET}`); const day = date.getUTCDay(); return day === 0 ? 7 : day; }
 function minutesFromTime(value: string) { const [hours, minutes] = String(value).slice(0, 5).split(":").map(Number); return hours * 60 + minutes; }
 function candidateDateTime(dateString: string, minutes: number) { const hours = Math.floor(minutes / 60).toString().padStart(2, "0"); const mins = (minutes % 60).toString().padStart(2, "0"); return new Date(`${dateString}T${hours}:${mins}:00${TIME_ZONE_OFFSET}`); }
-function overlaps(start: number, end: number, busy: BusyItem[]) { return busy.some(item => start < item.end && end > item.start); }
+function overlaps(start: number, end: number, busy: BusyItem[]) { return busy.some(item => intervalsOverlap(start, end, item.start, item.end)); }
 function insideAvailability(startMinutes: number, endMinutes: number, rows: AvailabilityRow[]) { return rows.some(row => row.available && startMinutes >= minutesFromTime(row.start_time) && endMinutes <= minutesFromTime(row.end_time)); }
 function scoreCandidate(candidate: Omit<Candidate, "score" | "reason">, busy: BusyItem[]) { let score = 100; const startDate = new Date(candidate.startEpoch); const localMinutes = (startDate.getUTCHours() * 60 + startDate.getUTCMinutes() + 330) % (24 * 60); if (localMinutes < 10 * 60) score -= 4; if (localMinutes >= 16 * 60) score -= 6; const adjacentBusy = busy.some(item => Math.abs(item.end - candidate.startEpoch) <= 15 * 60 * 1000 || Math.abs(item.start - candidate.endEpoch) <= 15 * 60 * 1000); if (adjacentBusy) score -= 8; return Math.max(0, score); }
 
@@ -65,9 +66,9 @@ export async function POST(request: Request) {
     ]);
     if (usersError) throw usersError; if (availabilityError) throw availabilityError; if (eventsError) throw eventsError; if (participantLinksError) throw participantLinksError;
     if (!users || users.length !== participantIds.length) return NextResponse.json({ error: "One or more selected participants could not be found." }, { status: 400 });
-    const meetingIds = [...new Set((participantLinks ?? []).map(row => row.meeting_id).filter((id): id is string => typeof id === "string"))];
-    let meetings: Array<{ id: string; date: string; created_by: string; status: string | null }> = [];
-    if (meetingIds.length) { const { data, error } = await admin.from("meetings").select("id,date,created_by,status").in("id", meetingIds).gte("date", `${startDate}T00:00:00${TIME_ZONE_OFFSET}`).lt("date", `${endDate}T00:00:00${TIME_ZONE_OFFSET}`); if (error) throw error; meetings = data ?? []; }
+    // Declined invitees do not occupy a participant's calendar.
+    const activeParticipantLinks = (participantLinks ?? []).filter(link => String(link.attendance_status ?? "").toLowerCase() !== "declined");
+    const meetingIds = [...new Set(activeParticipantLinks.map(row => row.meeting_id).filter((id): id is string => typeof id === "string"))];
     const agendaMinutesByMeeting = new Map<string, number>();
     if (meetingIds.length) {
       const { data: agendaRows, error: agendaError } = await admin.from("agenda_items").select("meeting_id,duration_minutes").in("meeting_id", meetingIds);
@@ -77,16 +78,29 @@ export async function POST(request: Request) {
         if (Number.isFinite(minutes) && minutes > 0) agendaMinutesByMeeting.set(row.meeting_id, (agendaMinutesByMeeting.get(row.meeting_id) ?? 0) + minutes);
       }
     }
-    const activeParticipantLinks = (participantLinks ?? []).filter(link => String(link.attendance_status ?? "").toLowerCase() !== "declined");
+
+    // A meeting can begin before the requested search window and still overlap it.
+    // Derive the earliest possible start from the longest known agenda duration,
+    // using the same 60-minute fallback as the busy-interval calculation below.
+    const longestExistingMeetingMinutes = [...agendaMinutesByMeeting.values()].reduce((longest, minutes) => Math.max(longest, minutes), DEFAULT_DURATION_MINUTES);
+    const earliestMeetingStart = getMeetingQueryStart(startDate, longestExistingMeetingMinutes, TIME_ZONE_OFFSET);
+    let meetings: Array<{ id: string; date: string; created_by: string; status: string | null }> = [];
+    if (meetingIds.length) {
+      const { data, error } = await admin.from("meetings").select("id,date,created_by,status")
+        .in("id", meetingIds).gte("date", earliestMeetingStart)
+        .lt("date", `${endDate}T00:00:00${TIME_ZONE_OFFSET}`);
+      if (error) throw error;
+      meetings = data ?? [];
+    }
     const busy: BusyItem[] = [
-      ...(events ?? []).map(event => ({ user_id: event.organizer_id, start: new Date(event.start_time).getTime(), end: new Date(event.end_time).getTime(), source: "event" as const })),
+      ...(events ?? []).map(event => ({ user_id: event.organizer_id, start: new Date(event.start_time).getTime(), end: new Date(event.end_time).getTime(), source: "event" as const })).filter(item => Number.isFinite(item.start) && Number.isFinite(item.end) && item.end > item.start),
       ...(meetings ?? []).flatMap(meeting => {
         const linkedUsers = activeParticipantLinks.filter(link => link.meeting_id === meeting.id).map(link => link.user_id);
         const existingDuration = agendaMinutesByMeeting.get(meeting.id) || DEFAULT_DURATION_MINUTES;
         const start = new Date(meeting.date).getTime();
         return linkedUsers.map(userId => ({ user_id: userId, start, end: start + existingDuration * 60_000, source: "meeting" as const }));
       }),
-    ].filter(item => Number.isFinite(item.start) && Number.isFinite(item.end) && item.end > item.start);
+    ].filter(item => isValidBusyInterval(item.start, item.end));
     const availabilityByUser = new Map<string, AvailabilityRow[]>();
     for (const row of availability ?? []) { const list = availabilityByUser.get(row.user_id) ?? []; list.push(row); availabilityByUser.set(row.user_id, list); }
     const candidates: Candidate[] = [];

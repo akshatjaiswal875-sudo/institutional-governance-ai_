@@ -35,6 +35,8 @@ jobs:
         run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
+      - name: Automated tests
+        run: npm test
       - name: TypeScript validation
         run: npm run typecheck
       - name: Production build

@@ -64,7 +64,7 @@ export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
               <p className="mt-1 text-xs text-[var(--body-text)]">Institutional workspace</p>
             </div>
           )}
-          <button type="button" onClick={onToggle} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[var(--soft-border)] bg-white/80 text-[var(--heading)] shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--primary-main)] hover:text-[var(--primary-main)] focus:outline-none focus:ring-2 focus:ring-[var(--primary-main)]/30" aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} aria-expanded={!collapsed} title={collapsed ? "Expand sidebar (Ctrl/Cmd+B)" : "Collapse sidebar (Ctrl/Cmd+B)"}>
+          <button type="button" onClick={onToggle} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[var(--soft-border)] bg-white/80 text-[var(--heading)] shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--primary-main)] hover:text-[#1E40AF] focus:outline-none focus:ring-2 focus:ring-[var(--primary-main)]/30" aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} aria-expanded={!collapsed} title={collapsed ? "Expand sidebar (Ctrl/Cmd+B)" : "Collapse sidebar (Ctrl/Cmd+B)"}>
             {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
           </button>
         </div>
@@ -73,8 +73,8 @@ export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
           {sidebarItems.map(({ href, label, icon: Icon }) => {
             const active = isActivePath(pathname, href);
             return (
-              <Link key={href} href={href} onClick={onNavigate} prefetch aria-current={active ? "page" : undefined} title={collapsed ? label : undefined} className={`group flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-[var(--primary-main)]/30 ${collapsed ? "justify-center" : ""} ${active ? "bg-gradient-to-r from-violet-100/90 to-cyan-50/90 text-[var(--heading)] shadow-sm ring-1 ring-violet-200/70" : "text-[var(--body-text)] hover:bg-violet-50/70 hover:text-[var(--heading)]"}`}>
-                <Icon size={19} strokeWidth={active ? 2.4 : 2} className={active ? "text-[var(--primary-main)]" : "text-[var(--muted-text)] group-hover:text-[var(--primary-main)]"} aria-hidden="true" />
+              <Link key={href} href={href} onClick={onNavigate} prefetch aria-current={active ? "page" : undefined} title={collapsed ? label : undefined} className={`group flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-[var(--primary-main)]/30 ${collapsed ? "justify-center" : ""} ${active ? "bg-gradient-to-r from-blue-50 to-slate-50 text-[var(--heading)] shadow-sm ring-1 ring-blue-200/80" : "text-[var(--body-text)] hover:bg-slate-100 hover:text-[var(--heading)]"}`}>
+                <Icon size={19} strokeWidth={active ? 2.4 : 2} className={active ? "text-[#1E40AF]" : "text-[var(--muted-text)] group-hover:text-[#1E40AF]"} aria-hidden="true" />
                 {!collapsed && <span className="truncate">{label}</span>}
                 {!collapsed && active && <span className="ml-auto h-2 w-2 rounded-full bg-[var(--primary-main)]" aria-hidden="true" />}
               </Link>
@@ -83,8 +83,8 @@ export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
         </nav>
 
         <div className="mt-3 border-t border-[var(--soft-border)] pt-3">
-          <div className={`rounded-xl bg-gradient-to-br from-violet-50 to-cyan-50 p-3 ${collapsed ? "flex justify-center" : ""}`}>
-            {collapsed ? <Menu size={18} className="text-[var(--primary-main)]" aria-hidden="true" /> : <><p className="text-xs font-semibold text-[var(--heading)]">Quick navigation</p><p className="mt-1 text-[11px] leading-5 text-[var(--muted-text)]">Ctrl/Cmd+B toggles this sidebar.</p></>}
+          <div className={`rounded-xl bg-gradient-to-br from-slate-50 to-blue-50 p-3 ${collapsed ? "flex justify-center" : ""}`}>
+            {collapsed ? <Menu size={18} className="text-[#1E40AF]" aria-hidden="true" /> : <><p className="text-xs font-semibold text-[var(--heading)]">Quick navigation</p><p className="mt-1 text-[11px] leading-5 text-[var(--muted-text)]">Ctrl/Cmd+B toggles this sidebar.</p></>}
           </div>
         </div>
       </div>

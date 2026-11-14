@@ -99,7 +99,7 @@ export function NaturalGovernanceAssistant() {
     if (!selected.length || findingBestTime) return;
     setFindingBestTime(true); setError("");
     try {
-      const result = await api<BestTimeResult>("/api/calendar/find-best-time", { method: "POST", body: JSON.stringify({ participantIds: selected, durationMinutes: 60 }) });
+      const result = await api<BestTimeResult>("/api/calendar/find-best-time", { method: "POST", body: JSON.stringify({ participantIds: selected }) });
       setBestTimeResult(result);
       if (!result.recommended) setError("No common free slot was found in the next 7 days. Try fewer participants or a shorter duration.");
     } catch (e) { setError(e instanceof Error ? e.message : "Unable to find a common free time."); }

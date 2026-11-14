@@ -10,7 +10,7 @@ type Preferences = {
   default_duration_minutes: number; buffer_minutes: number; max_meetings_per_day: number;
 };
 type ProfileData = { availability: Availability[]; preferences: Preferences; unavailability: Array<Exception & { id: string }> };
-const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const DEFAULT_PREFERENCES: Preferences = { timezone: "Asia/Kolkata", preferred_start_time: null, preferred_end_time: null, default_duration_minutes: 60, buffer_minutes: 15, max_meetings_per_day: 5 };
 
 async function requestProfile(method: "GET" | "PUT", body?: unknown) {

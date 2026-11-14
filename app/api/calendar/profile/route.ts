@@ -4,7 +4,7 @@ import { requireUser } from "@/lib/auth";
 
 const timeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use 24-hour HH:MM time.");
 const availabilitySchema = z.object({
-  day_of_week: z.number().int().min(0).max(6),
+  day_of_week: z.number().int().min(1).max(7),
   start_time: timeSchema,
   end_time: timeSchema,
   available: z.boolean().default(true),
@@ -62,7 +62,7 @@ export async function GET() {
   try {
     const { supabase, profile } = await requireUser();
     const [availabilityResult, preferencesResult, unavailabilityResult] = await Promise.all([
-      supabase.from("user_availability").select("id,day_of_week,start_time,end_time,available").eq("user_id", profile.id).order("day_of_week").order("start_time"),
+      supabase.from("user_availability").select("day_of_week,start_time,end_time,available").eq("user_id", profile.id).order("day_of_week").order("start_time"),
       supabase.from("user_scheduling_preferences").select("timezone,preferred_start_time,preferred_end_time,default_duration_minutes,buffer_minutes,max_meetings_per_day").eq("user_id", profile.id).maybeSingle(),
       supabase.from("user_unavailability").select("id,starts_at,ends_at,reason").eq("user_id", profile.id).gte("ends_at", new Date().toISOString()).order("starts_at"),
     ]);

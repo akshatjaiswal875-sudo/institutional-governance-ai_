@@ -4,6 +4,11 @@ import { recordAudit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const MEETING_MANAGERS = ["Director", "Principal", "HOD", "Coordinator", "Super Admin", "Meeting Secretary"] as const;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function invalidMeetingId(id: unknown) {
+  return typeof id !== "string" || !UUID_RE.test(id);
+}
 
 type Profile = {
   id: string;
@@ -13,6 +18,7 @@ type Profile = {
 };
 
 export async function GET(_request: Request, { params }: { params: { id: string } }) {
+  if (invalidMeetingId(params?.id)) return NextResponse.json({ error: "A valid meeting id is required." }, { status: 400 });
   try {
     const { supabase } = await requireUser();
     const [{ data: meeting }, { data: participants }, { data: agenda }, { data: minutes }, { data: decisions }, { data: actions }] = await Promise.all([
@@ -60,6 +66,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
 }
 
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
+  if (invalidMeetingId(params?.id)) return NextResponse.json({ error: "A valid meeting id is required." }, { status: 400 });
   try {
     const { supabase, profile } = await requireUser([...MEETING_MANAGERS]);
     const body = await request.json();
@@ -83,6 +90,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
 }
 
 export async function DELETE(_request: Request, { params }: { params: { id: string } }) {
+  if (invalidMeetingId(params?.id)) return NextResponse.json({ error: "A valid meeting id is required." }, { status: 400 });
   try {
     const { supabase, profile } = await requireUser(["Director", "Super Admin"]);
     const { error } = await supabase.from("meetings").delete().eq("id", params.id);

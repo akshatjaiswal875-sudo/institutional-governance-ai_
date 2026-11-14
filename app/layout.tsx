@@ -7,7 +7,7 @@ export const metadata: Metadata = {
   title: "GovAI — Institutional Governance OS",
   description: "AI-powered institutional governance platform for meetings, events, policies, decisions and action items.",
   applicationName: "GovAI",
-  themeColor: "#f5f3ff",
+  themeColor: "#0F2342",
   viewport: {
     width: "device-width",
     initialScale: 1,
@@ -24,7 +24,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <head>
-        <meta name="theme-color" content="#f5f3ff" />
+        <meta name="theme-color" content="#0F2342" />
       </head>
       <body>
         <DashboardLayout>{children}</DashboardLayout>

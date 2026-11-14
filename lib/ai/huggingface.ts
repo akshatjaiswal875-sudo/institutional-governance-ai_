@@ -145,6 +145,43 @@ export async function extractActionsWithHuggingFace(transcript: string) {
   }
 }
 
+function formatRecordDate(value: unknown): string {
+  if (typeof value !== "string" || !value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: value.includes("T") ? "short" : undefined, timeZone: "Asia/Kolkata" }).format(date);
+}
+
+function readableRecordFallback(context: string): string {
+  const records: Array<{ kind: string; id: string; data: Record<string, unknown> }> = [];
+  const pattern = /^\\[(meeting|event|policy):([^\\]]+)\\]\\s*(\\{.*\\})\\s*$/gm;
+  for (const match of context.matchAll(pattern)) {
+    try {
+      const data = JSON.parse(match[3]) as Record<string, unknown>;
+      // Do not surface known seeded demonstration timetable rows as institutional records.
+      const description = typeof data.description === "string" ? data.description : "";
+      if (/SAMPLE CALENDAR DATA|TEST BUSY|SAMPLE CALENDAR/i.test(description)) continue;
+      records.push({ kind: match[1], id: match[2].split(":")[0], data });
+    } catch {
+      // Ignore malformed context fragments rather than showing raw database payloads.
+    }
+  }
+  const unique = new Map<string, typeof records[number]>();
+  for (const record of records) unique.set(`${record.kind}:${record.id}`, record);
+  const found = [...unique.values()].slice(0, 6);
+  if (!found.length) return "The AI provider is temporarily unavailable, and I couldn't prepare a readable answer from the available records. Please try again shortly.";
+  const lines = found.map(({ kind, id, data }) => {
+    const title = typeof data.title === "string" && data.title.trim() ? data.title.trim() : `Untitled ${kind}`;
+    const details: string[] = [kind[0].toUpperCase() + kind.slice(1)];
+    if (typeof data.status === "string" && data.status) details.push(data.status);
+    const date = formatRecordDate(data.date ?? data.start_time);
+    if (date) details.push(date);
+    if (typeof data.location === "string" && data.location.trim()) details.push(data.location.trim());
+    return `- **${title}** — ${details.join(" · ")} [${kind}:${id}]`;
+  });
+  return `The AI provider is temporarily unavailable, but I found these relevant institutional records:\n\n${lines.join("\n")}\n\nI have shown the matching record details without exposing raw database data. Please try again later for a full AI-generated summary.`;
+}
+
 export async function answerWithHuggingFace(context: string, question: string) {
   const model = resolveAnalysisModel(process.env.HUGGINGFACE_ANSWER_MODEL || process.env.HUGGINGFACE_MODEL);
   const safeContext = context.slice(0, MAX_TRANSCRIPT_CHARS);
@@ -152,8 +189,9 @@ export async function answerWithHuggingFace(context: string, question: string) {
   try {
     const response = await callHuggingFace(prompt, model);
     return response.trim() || "I could not find a matching meeting, policy, or event record. Please try a more specific question.";
-  } catch {
+  } catch (error) {
+    console.error("[assistant] AI answer provider failed; using readable record fallback:", error instanceof Error ? error.message : error);
     if (!safeContext.trim()) return "I could not find a matching meeting, policy, or event record. Please try a more specific question.";
-    return `AI provider is temporarily unavailable. Relevant institutional records found:\n\n${safeContext.slice(0, 1800)}`;
+    return readableRecordFallback(safeContext);
   }
 }

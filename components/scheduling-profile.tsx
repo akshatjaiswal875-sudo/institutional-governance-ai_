@@ -41,7 +41,7 @@ export function SchedulingProfile() {
     requestProfile("GET").then((data: ProfileData) => {
       if (!active) return;
       setAvailability(data.availability.map((row) => ({ ...row, start_time: String(row.start_time).slice(0, 5), end_time: String(row.end_time).slice(0, 5) })));
-      setPreferences(data.preferences);
+      setPreferences({ ...data.preferences, preferred_start_time: data.preferences.preferred_start_time?.slice(0, 5) ?? null, preferred_end_time: data.preferences.preferred_end_time?.slice(0, 5) ?? null });
       setExceptions(data.unavailability.map((row) => ({ starts_at: localDateTime(row.starts_at), ends_at: localDateTime(row.ends_at), reason: row.reason ?? "" })));
     }).catch((e) => { if (active) setError(e.message); }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };

@@ -25,8 +25,8 @@ function parseMeetingRequest(message: string) {
   }
   const withMatch = message.match(/\\bwith\\s+(.+?)(?=\\s+(?:for|to discuss|about|regarding|tomorrow|today|next week|on|at|in)\\b|[,.]|$)/i);
   const topicMatch = message.match(/\\b(?:for|to discuss|about|regarding)\\s+(.+?)(?=\\s+(?:tomorrow|today|next week|on|at)\\b|[,.]|$)/i);
-  const locationMatch = message.match(/\\b(?:at|in)\\s+([^,.]+?)(?=\\s+(?:tomorrow|today|next week|to discuss|about|regarding)\\b|[,.]|$)/i);
-  let participantQuery = clean(withMatch?.[1]).replace(/^the\\s+/i, "");
+  const locationMatch = message.match(/\\bat\\s+([^,.]+?)(?=\\s+(?:tomorrow|today|next week|to discuss|about|regarding)\\b|[,.]|$)/i);
+  let participantQuery = clean(withMatch?.[1]).replace(/^(?:the|all)\\s+/i, "");
   const aliases: Record<string, string> = { hods: "HOD", "heads of departments": "HOD", faculty: "Faculty / Officer", faculties: "Faculty / Officer", "meeting secretary": "Meeting Secretary", coordinators: "Coordinator", members: "Member" };
   participantQuery = aliases[participantQuery.toLowerCase()] ?? participantQuery;
   const topic = clean(topicMatch?.[1]);

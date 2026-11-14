@@ -54,7 +54,7 @@ export async function generateWithGemini(prompt: string, options?: { json?: bool
 }
 
 export function parseGeminiJson<T>(value: string): T {
-  const cleaned = value.trim().replace(/^\`\`\`(?:json)?\s*/i, "").replace(/\s*\`\`\`$/, "").trim();
+  const cleaned = value.trim().replace(/^```(?:json)?\\s*/i, "").replace(/\\s*```$/, "").trim();
   const start = cleaned.indexOf("{");
   const end = cleaned.lastIndexOf("}");
   if (start < 0 || end <= start) throw new Error("Gemini returned malformed JSON.");

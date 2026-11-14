@@ -79,7 +79,7 @@ export async function POST(request: Request) {
       admin.from("user_availability").select("user_id,day_of_week,start_time,end_time,available").in("user_id", participantIds),
       admin.from("user_scheduling_preferences").select("user_id,timezone,preferred_start_time,preferred_end_time,default_duration_minutes,buffer_minutes,max_meetings_per_day").in("user_id", participantIds),
       admin.from("user_unavailability").select("user_id,starts_at,ends_at").in("user_id", participantIds).lt("starts_at", `${endDate}T00:00:00${TIME_ZONE_OFFSET}`).gt("ends_at", `${startDate}T00:00:00${TIME_ZONE_OFFSET}`),
-      admin.from("events").select("id,organizer_id,start_time,end_time").in("organizer_id", participantIds).lt("start_time", `${endDate}T00:00:00${TIME_ZONE_OFFSET}`).gt("end_time", `${startDate}T00:00:00${TIME_ZONE_OFFSET}`).is("deleted_at", null),
+      admin.from("events").select("id,organizer_id,start_time,end_time,status").in("organizer_id", participantIds).neq("status", "Cancelled").lt("start_time", `${endDate}T00:00:00${TIME_ZONE_OFFSET}`).gt("end_time", `${startDate}T00:00:00${TIME_ZONE_OFFSET}`).is("deleted_at", null),
       admin.from("participants").select("meeting_id,user_id,attendance_status").in("user_id", participantIds),
     ]);
     if (usersError) throw usersError; if (availabilityError) throw availabilityError; if (preferencesError) throw preferencesError; if (exceptionsError) throw exceptionsError; if (eventsError) throw eventsError; if (participantLinksError) throw participantLinksError;
@@ -93,7 +93,7 @@ export async function POST(request: Request) {
     const effectiveDuration = durationMinutes ?? Math.max(...users.map(user => Number(effectivePreferences.get(user.id)?.default_duration_minutes || DEFAULT_DURATION_MINUTES)));
     const meetingIds = [...new Set((participantLinks ?? []).map(row => row.meeting_id).filter((id): id is string => typeof id === "string"))];
     let meetings: Array<{ id: string; date: string; created_by: string; status: string | null }> = [];
-    if (meetingIds.length) { const { data, error } = await admin.from("meetings").select("id,date,created_by,status").in("id", meetingIds).gte("date", `${startDate}T00:00:00${TIME_ZONE_OFFSET}`).lt("date", `${endDate}T00:00:00${TIME_ZONE_OFFSET}`); if (error) throw error; meetings = data ?? []; }
+    if (meetingIds.length) { const { data, error } = await admin.from("meetings").select("id,date,created_by,status").in("id", meetingIds).in("status", ["Pending Approval", "Published", "Approved", "Transcribed"]).gte("date", `${startDate}T00:00:00${TIME_ZONE_OFFSET}`).lt("date", `${endDate}T00:00:00${TIME_ZONE_OFFSET}`); if (error) throw error; meetings = data ?? []; }
     const agendaMinutesByMeeting = new Map<string, number>();
     if (meetingIds.length) {
       const { data: agendaRows, error: agendaError } = await admin.from("agenda_items").select("meeting_id,duration_minutes").in("meeting_id", meetingIds);
@@ -107,7 +107,7 @@ export async function POST(request: Request) {
     const busy: BusyItem[] = [
       ...(events ?? []).map(event => ({ user_id: event.organizer_id, start: new Date(event.start_time).getTime(), end: new Date(event.end_time).getTime(), source: "event" as const })),
       ...(meetings ?? []).flatMap(meeting => {
-        const linkedUsers = activeParticipantLinks.filter(link => link.meeting_id === meeting.id).map(link => link.user_id);
+        const linkedUsers = [...new Set([meeting.created_by, ...activeParticipantLinks.filter(link => link.meeting_id === meeting.id).map(link => link.user_id)])];
         const existingDuration = agendaMinutesByMeeting.get(meeting.id) || DEFAULT_DURATION_MINUTES;
         const start = new Date(meeting.date).getTime();
         return linkedUsers.map(userId => ({ user_id: userId, start, end: start + existingDuration * 60_000, source: "meeting" as const }));

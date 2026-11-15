@@ -177,7 +177,7 @@ export function NaturalGovernanceAssistant() {
         <form onSubmit={submit} className="mt-4 flex gap-2"><input value={query} onChange={e => setQuery(e.target.value)} className="input flex-1" placeholder="Ask anything about your institution..." disabled={busy}/><button className="btn btn-primary" disabled={busy || !query.trim()}><Send size={16}/></button></form>
       </section>
       <aside className="space-y-4">
-        <div className="card p-5"><h2 className="font-semibold">Admin quick action</h2><p className="mt-2 text-sm text-slate-400">Super Admins can create a meeting by describing it naturally.</p><button onClick={() => { setError(""); setMeetingDialogOpen(true); }} className="btn btn-primary mt-4 inline-flex items-center gap-2" disabled={busy}><CalendarPlus size={17}/>Create meeting with AI</button></div>
+        <div className="card p-5"><h2 className="font-semibold">Create a meeting with AI</h2><p className="mt-2 text-sm text-slate-400">Any signed-in user can create a meeting. You will own and manage the meeting you create.</p><button onClick={() => { setError(""); setMeetingDialogOpen(true); }} className="btn btn-primary mt-4 inline-flex items-center gap-2" disabled={busy}><CalendarPlus size={17}/>Create meeting with AI</button></div>
         <div className="card p-5">
           <h2 className="font-semibold">Institution timetable</h2>
           <p className="mt-2 text-sm text-slate-400">Upload the Excel timetable so lectures, faculty periods, rooms and institutional events are blocked during AI scheduling.</p>

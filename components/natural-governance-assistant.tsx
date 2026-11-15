@@ -10,7 +10,8 @@ async function api<T>(url: string, options?: RequestInit): Promise<T> {
   return result.data as T;
 }
 
-type Message = { role: "user" | "assistant"; content: string };
+type AssistantSource = { parent_type: string; parent_id: string; title?: string; status?: string; date?: string; start_time?: string };
+type Message = { role: "user" | "assistant"; content: string; sources?: AssistantSource[]; aiAvailable?: boolean };
 type ActionDraft = { title: string; date: string | null; location: string | null; participantQuery: string; topic: string; windowHint?: "next_week" | "next_7_days" };
 type Participant = { id: string; email: string; role: string; department?: string | null };
 type BestTimeSlot = { start: string; end: string; availableCount: number; participantCount: number; score: number; reason: string };
@@ -26,7 +27,7 @@ function inlineMarkdown(text: string): ReactNode[] {
   });
 }
 
-function AssistantMessage({ content }: { content: string }) {
+function AssistantMessage({ content, sources, aiAvailable }: { content: string; sources?: AssistantSource[]; aiAvailable?: boolean }) {
   const sourceMatches = [...content.matchAll(/\[(meeting|event|policy|decision|minutes|meeting_transcript|meeting_ai_analysis):([^\]]+)\]/gi)];
   const clean = content.replace(/\[(meeting|event|policy|decision|minutes|meeting_transcript|meeting_ai_analysis):[^\]]+\]/gi, "").replace(/\n{3,}/g, "\n\n").trim();
   const lines = clean.split(/\r?\n/);
@@ -96,7 +97,7 @@ export function NaturalGovernanceAssistant() {
   async function ask(text: string) {
     const message = text.trim(); if (!message || busy) return;
     setBusy(true); setError(""); setQuery(""); setMessages(prev => [...prev, { role: "user", content: message }]);
-    try { const result = await api<any>("/api/assistant", { method: "POST", body: JSON.stringify({ message }) }); setMessages(prev => [...prev, { role: "assistant", content: result.answer ?? "I couldn't find a useful answer." }]); }
+    try { const result = await api<any>("/api/assistant", { method: "POST", body: JSON.stringify({ message }) }); setMessages(prev => [...prev, { role: "assistant", content: result.answer ?? "I couldn't find a useful answer.", sources: Array.isArray(result.sources) ? result.sources : [], aiAvailable: result.aiAvailable !== false }]); }
     catch (e) { setError(e instanceof Error ? e.message : "Assistant failed."); }
     finally { setBusy(false); }
   }
@@ -170,7 +171,7 @@ export function NaturalGovernanceAssistant() {
       <section className="card flex min-h-[560px] flex-col p-5">
         <div className="flex-1 space-y-4 overflow-auto pr-1">
           {!messages.length && <div className="py-16 text-center"><Sparkles className="mx-auto mb-4" size={34}/><h2 className="text-xl font-semibold">How can I help?</h2><p className="mx-auto mt-2 max-w-lg text-slate-400">Ask in normal language. You don't need exact commands or database terms.</p><div className="mt-6 flex flex-wrap justify-center gap-2">{suggestions.map(s => <button key={s} onClick={() => void ask(s)} className="btn btn-secondary text-sm">{s}</button>)}</div></div>}
-          {messages.map((m, i) => <div key={i} className={`flex gap-3 ${m.role === "user" ? "justify-end" : "justify-start"}`}><div className={`max-w-[88%] rounded-2xl px-4 py-3 shadow-sm ${m.role === "user" ? "bg-indigo-600 text-white" : "border border-slate-700/80 bg-slate-800/90 text-slate-100"}`}><div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-wide opacity-70">{m.role === "user" ? <><UserRound size={14}/> You</> : <><Bot size={14}/> Governance AI</>}</div>{m.role === "assistant" ? <AssistantMessage content={m.content}/> : <div className="whitespace-pre-wrap leading-6">{m.content}</div>}</div></div>)}
+          {messages.map((m, i) => <div key={i} className={`flex gap-3 ${m.role === "user" ? "justify-end" : "justify-start"}`}><div className={`max-w-[88%] rounded-2xl px-4 py-3 shadow-sm ${m.role === "user" ? "bg-indigo-600 text-white" : "border border-slate-700/80 bg-slate-800/90 text-slate-100"}`}><div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-wide opacity-70">{m.role === "user" ? <><UserRound size={14}/> You</> : <><Bot size={14}/> Governance AI</>}</div>{m.role === "assistant" ? <AssistantMessage content={m.content} sources={m.sources} aiAvailable={m.aiAvailable}/> : <div className="whitespace-pre-wrap leading-6">{m.content}</div>}</div></div>)}
           {busy && <div className="flex items-center gap-2 text-sm text-slate-400"><Bot size={15}/> Assistant is thinking<span className="animate-pulse">...</span></div>}
         </div>
         {error && <p className="mb-3 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-sm text-red-300" role="alert">{error}</p>}

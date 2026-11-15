@@ -59,12 +59,14 @@ create policy meetings_owner_delete on public.meetings
 for delete to authenticated
 using (created_by = auth.uid());
 
+drop policy if exists meetings_authenticated_read on public.meetings;
 drop policy if exists meetings_participant_read on public.meetings;
 create policy meetings_participant_read on public.meetings
 for select to authenticated
 using (public.is_meeting_member(id));
 
 -- Participants: owner controls membership; a user can read their own invitation.
+drop policy if exists participants_read on public.participants;
 drop policy if exists participants_staff_write on public.participants;
 drop policy if exists participants_owner_write on public.participants;
 drop policy if exists participants_owner_read on public.participants;
@@ -79,6 +81,7 @@ using (public.owns_meeting(meeting_id))
 with check (public.owns_meeting(meeting_id));
 
 -- Agenda.
+drop policy if exists agenda_items_read on public.agenda_items;
 drop policy if exists agenda_items_staff_write on public.agenda_items;
 drop policy if exists agenda_items_owner_read on public.agenda_items;
 drop policy if exists agenda_items_owner_write on public.agenda_items;

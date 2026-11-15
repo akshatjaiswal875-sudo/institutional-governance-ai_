@@ -86,6 +86,27 @@ function addSource(sources: AssistantSource[], sourceKeys: Set<string>, parent_t
   sources.push({ parent_type, parent_id, ...metadata });
 }
 
+function recordFallback(sources: AssistantSource[]): string {
+  const useful = sources.filter((source) => typeof source.title === "string" && source.title.trim()).slice(0, 6);
+  if (!useful.length) return "I found relevant institutional records, but the AI providers are temporarily unavailable. Please try again shortly.";
+  const bullets = useful.map((source) => {
+    const kind = source.parent_type.replace(/_/g, " ");
+    const title = String(source.title).trim();
+    const status = typeof source.status === "string" ? ` · ${source.status}` : "";
+    const dateValue = source.date ?? source.start_time;
+    const date = typeof dateValue === "string" ? ` · ${dateValue}` : "";
+    return `- **${title}** — ${kind}${status}${date}`;
+  });
+  return `I found these matching institutional records. The AI summarization service is temporarily unavailable, so this is a record-based summary rather than an AI-generated interpretation:\\n\\n${bullets.join("\\n")}`;
+}
+
+function looksLikeRawDatabasePayload(value: string): boolean {
+  const text = value.trim();
+  if (!text) return true;
+  if ((text.startsWith("{") || text.startsWith("[")) && /"created_by"|"assigned_approver_id"|"parent_id"|"parent_type"/i.test(text)) return true;
+  return /\\{\\s*"id"\\s*:\\s*"[0-9a-f-]{20,}"\\s*,\\s*"title"/i.test(text);
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = schema.parse(await req.json());
@@ -222,8 +243,21 @@ export async function POST(req: NextRequest) {
     const context = contextParts.join('\n\n').slice(0, 115000);
     if (!context.trim()) return ok({ answer: 'I could not find a matching meeting, policy, or event record. Please try a more specific question.', sources: [] });
 
-    const answer = await answerMeetingQuestion(context, body.message);
-    return ok({ answer: answer || 'I could not find a matching meeting, policy, or event record. Please try a more specific question.', sources: sources.slice(0, 50) });
+    let answer: string;
+    let aiAvailable = true;
+    try {
+      answer = await answerMeetingQuestion(context, body.message);
+      if (looksLikeRawDatabasePayload(answer)) throw new Error("AI provider returned raw database data instead of a natural-language answer.");
+    } catch (providerError) {
+      aiAvailable = false;
+      console.error("[assistant] all answer providers failed or returned unrenderable output:", providerError instanceof Error ? providerError.message : providerError);
+      answer = recordFallback(sources);
+    }
+    return ok({
+      answer: answer || 'I could not find a matching meeting, policy, or event record. Please try a more specific question.',
+      aiAvailable,
+      sources: sources.slice(0, 50),
+    });
   } catch (error) {
     console.error('[assistant]', error);
     return fail(error instanceof Error ? error.message : 'Assistant failed', 500);

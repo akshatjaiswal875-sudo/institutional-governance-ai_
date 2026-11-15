@@ -222,3 +222,17 @@ using (
       and m.created_by = auth.uid()
   )
 );
+
+-- Action items are part of the meeting record and follow the same owner-only edit rule.
+drop policy if exists action_items_authenticated_read on public.action_items;
+drop policy if exists action_items_leader_insert on public.action_items;
+drop policy if exists action_items_leader_update on public.action_items;
+drop policy if exists action_items_owner_read on public.action_items;
+drop policy if exists action_items_owner_write on public.action_items;
+create policy action_items_owner_read on public.action_items
+for select to authenticated
+using (public.is_meeting_member(meeting_id));
+create policy action_items_owner_write on public.action_items
+for all to authenticated
+using (public.owns_meeting(meeting_id))
+with check (public.owns_meeting(meeting_id));

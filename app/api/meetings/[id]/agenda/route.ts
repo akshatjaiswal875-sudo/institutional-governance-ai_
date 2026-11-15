@@ -2,10 +2,9 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { recordAudit } from "@/lib/audit";
 
-const MEETING_MANAGERS = ["Director", "Principal", "HOD", "Coordinator", "Super Admin", "Meeting Secretary"] as const;
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   try {
-    const { supabase, profile } = await requireUser([...MEETING_MANAGERS]);
+    const { supabase, profile } = await requireUser();
     const body = await request.json(); const topic = typeof body.topic === "string" ? body.topic.trim() : "";
     if (!topic) return NextResponse.json({ error: "Topic is required." }, { status: 400 });
     const { data: meeting } = await supabase.from("meetings").select("id").eq("id", params.id).maybeSingle();

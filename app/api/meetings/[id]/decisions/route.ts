@@ -3,11 +3,9 @@ import { requireUser } from "@/lib/auth";
 import { recordAudit } from "@/lib/audit";
 
 const statuses = ["Pending", "In Progress", "Completed"] as const;
-const DECISION_MANAGERS = ["Director", "Principal", "HOD", "Coordinator"] as const;
-
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   try {
-    const { supabase, profile } = await requireUser([...DECISION_MANAGERS]);
+    const { supabase, profile } = await requireUser();
     const body: unknown = await request.json();
     const input = body && typeof body === "object" ? body as Record<string, unknown> : {};
     const decisionText = typeof input.decisionText === "string" ? input.decisionText.trim() : "";

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { transcribe, summarizeTranscript, extractActions } from "@/lib/ai/pipeline";
 import { recordAudit } from "@/lib/audit";
+import { canManageMeeting } from "@/lib/meeting-permissions";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -13,7 +14,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       .from("meetings").select("id,created_by,title").eq("id", params.id).maybeSingle();
     if (meetingError) throw meetingError;
     if (!meeting) return NextResponse.json({ error: "Meeting not found." }, { status: 404 });
-    if (meeting.created_by !== profile.id) return NextResponse.json({ error: "Only the meeting creator can process recordings." }, { status: 403 });
+    if (!canManageMeeting({ userId: profile.id, creatorId: meeting.created_by, role: profile.role })) return NextResponse.json({ error: "Only the meeting creator can process recordings." }, { status: 403 });
 
     const body = await request.json().catch(() => ({}));
     const recordingId = typeof body.recordingId === "string" ? body.recordingId : "";

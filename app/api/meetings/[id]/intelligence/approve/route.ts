@@ -2,11 +2,9 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { recordAudit } from "@/lib/audit";
 
-const AI_APPROVERS = ["Director", "Principal", "HOD", "Coordinator", "Super Admin", "Meeting Secretary"] as const;
-
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   try {
-    const { supabase, profile } = await requireUser([...AI_APPROVERS]);
+    const { supabase, profile } = await requireUser();
     const body = await request.json();
     const analysisId = typeof body.analysisId === "string" ? body.analysisId : "";
     if (!analysisId) return NextResponse.json({ error: "Analysis is required." }, { status: 400 });

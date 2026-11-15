@@ -5,7 +5,6 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 const maxFileSize = 100 * 1024 * 1024;
 const allowedPrefixes = ["audio/", "video/"];
-const RECORDING_MANAGERS = ["Director", "Principal", "HOD", "Coordinator", "Super Admin", "Meeting Secretary"] as const;
 
 function isValidRecording(file: File) { return allowedPrefixes.some((prefix) => file.type.startsWith(prefix)) && file.size > 0 && file.size <= maxFileSize; }
 
@@ -37,7 +36,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const { supabase, profile } = await requireUser([...RECORDING_MANAGERS]);
+    const { supabase, profile } = await requireUser();
     const { data: meeting } = await supabase.from("meetings").select("id,created_by").eq("id", params.id).maybeSingle();
     if (!meeting) return NextResponse.json({ error: "Meeting not found." }, { status: 404 });
     const form = await request.formData(); const file = form.get("file");

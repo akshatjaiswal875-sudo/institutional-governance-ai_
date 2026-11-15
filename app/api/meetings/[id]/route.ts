@@ -3,8 +3,6 @@ import { requireUser } from "@/lib/auth";
 import { recordAudit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-const MEETING_MANAGERS = ["Director", "Principal", "HOD", "Coordinator", "Super Admin", "Meeting Secretary"] as const;
-
 type Profile = {
   id: string;
   email: string;
@@ -61,7 +59,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
 
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
   try {
-    const { supabase, profile } = await requireUser([...MEETING_MANAGERS]);
+    const { supabase, profile } = await requireUser();
     const body = await request.json();
     const payload = {
       title: typeof body.title === "string" ? body.title.trim() : undefined,
@@ -84,14 +82,14 @@ export async function PATCH(request: Request, { params }: { params: { id: string
 
 export async function DELETE(_request: Request, { params }: { params: { id: string } }) {
   try {
-    const { supabase, profile } = await requireUser(["Director", "Super Admin"]);
+    const { supabase, profile } = await requireUser();
     const { error } = await supabase.from("meetings").delete().eq("id", params.id);
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
     await recordAudit(supabase, profile.id, "DELETE_MEETING", "meetings", params.id);
     return NextResponse.json({ success: true });
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHORIZED") return NextResponse.json({ error: "Authentication required." }, { status: 401 });
-    if (error instanceof Error && error.message === "FORBIDDEN") return NextResponse.json({ error: "Only Director can delete meetings." }, { status: 403 });
+    if (error instanceof Error && error.message === "FORBIDDEN") return NextResponse.json({ error: "Only the meeting creator can delete this meeting." }, { status: 403 });
     return NextResponse.json({ error: "Unable to delete meeting." }, { status: 500 });
   }
 }

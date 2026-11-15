@@ -9,9 +9,7 @@ const TRANSITIONS: Record<string, string[]> = {
 };
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
   try {
-    const { supabase, profile } = await requireUser([
-      "Director", "Principal", "HOD", "Coordinator", "Super Admin", "Meeting Secretary", "Faculty / Officer", "Faculty / Volunteers",
-    ]);
+    const { supabase, profile } = await requireUser();
     const body = await request.json();
     const nextStatus = typeof body.status === "string" ? body.status.trim() : "";
     if (!["Pending", "In Progress", "Completed"].includes(nextStatus)) return NextResponse.json({ error: "Invalid action item status." }, { status: 400 });

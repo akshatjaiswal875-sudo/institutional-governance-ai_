@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { recordAudit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { canManageMeeting, canApproveMeeting } from "@/lib/meeting-permissions";
 
 type Profile = {
   id: string;
@@ -12,7 +13,7 @@ type Profile = {
 
 export async function GET(_request: Request, { params }: { params: { id: string } }) {
   try {
-    const { supabase } = await requireUser();
+    const { supabase, profile } = await requireUser();
     const [{ data: meeting }, { data: participants }, { data: agenda }, { data: minutes }, { data: decisions }, { data: actions }] = await Promise.all([
       supabase.from("meetings").select("*").eq("id", params.id).maybeSingle(),
       supabase.from("participants").select("id,user_id,attendance_status").eq("meeting_id", params.id),
@@ -37,6 +38,10 @@ export async function GET(_request: Request, { params }: { params: { id: string 
 
     return NextResponse.json({
       data: {
+        permissions: {
+          canManageMeeting: canManageMeeting({ userId: profile.id, creatorId: meeting.created_by, role: profile.role }),
+          canApproveWorkflow: canApproveMeeting({ userId: profile.id, creatorId: meeting.created_by, assignedApproverId: meeting.assigned_approver_id, role: profile.role }),
+        },
         meeting: {
           ...meeting,
           creator: profileById.get(meeting.created_by) ?? null,
@@ -60,6 +65,9 @@ export async function GET(_request: Request, { params }: { params: { id: string 
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
   try {
     const { supabase, profile } = await requireUser();
+    const { data: meeting } = await supabase.from("meetings").select("id,created_by").eq("id", params.id).maybeSingle();
+    if (!meeting) return NextResponse.json({ error: "Meeting not found." }, { status: 404 });
+    if (!canManageMeeting({ userId: profile.id, creatorId: meeting.created_by, role: profile.role })) return NextResponse.json({ error: "Only the meeting creator or Super Admin can edit this meeting." }, { status: 403 });
     const body = await request.json();
     const payload = {
       title: typeof body.title === "string" ? body.title.trim() : undefined,
@@ -83,6 +91,9 @@ export async function PATCH(request: Request, { params }: { params: { id: string
 export async function DELETE(_request: Request, { params }: { params: { id: string } }) {
   try {
     const { supabase, profile } = await requireUser();
+    const { data: meeting } = await supabase.from("meetings").select("id,created_by").eq("id", params.id).maybeSingle();
+    if (!meeting) return NextResponse.json({ error: "Meeting not found." }, { status: 404 });
+    if (!canManageMeeting({ userId: profile.id, creatorId: meeting.created_by, role: profile.role })) return NextResponse.json({ error: "Only the meeting creator or Super Admin can delete this meeting." }, { status: 403 });
     const { error } = await supabase.from("meetings").delete().eq("id", params.id);
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
     await recordAudit(supabase, profile.id, "DELETE_MEETING", "meetings", params.id);

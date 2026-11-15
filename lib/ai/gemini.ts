@@ -4,7 +4,7 @@ type GeminiGenerateResponse = {
   error?: { message?: string };
 };
 
-const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
+const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
 const MAX_PROMPT_CHARS = 120_000;
 
 export function isGeminiConfigured(): boolean {
@@ -42,7 +42,7 @@ export async function generateWithGemini(prompt: string, options?: { json?: bool
       if (!response.ok) {
         const message = payload.error?.message || `Gemini request failed with HTTP ${response.status}.`;
         lastError = `Gemini API error (${response.status}) using ${model}: ${message}`;
-        if (response.status === 404 && model !== modelsToTry[modelsToTry.length - 1]) continue;
+        if ([400, 404, 429, 500, 502, 503, 504].includes(response.status) && model !== modelsToTry[modelsToTry.length - 1]) continue;
         throw new Error(lastError);
       }
       const text = payload.candidates?.[0]?.content?.parts?.map(part => part.text || "").join("").trim();

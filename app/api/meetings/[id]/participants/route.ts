@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { recordAudit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { canManageMeeting } from "@/lib/meeting-permissions";
 
 export async function GET(_request: Request, { params }: { params: { id: string } }) {
   try { const { supabase, profile } = await requireUser(); const admin = createAdminClient(); const { data: meeting, error: meetingError } = await supabase.from("meetings").select("id").eq("id", params.id).maybeSingle(); if (meetingError) throw meetingError; if (!meeting) return NextResponse.json({ error: "Meeting not found." }, { status: 404 }); const { data: meetingOwner } = await supabase.from("meetings").select("created_by").eq("id", params.id).maybeSingle(); if (meetingOwner?.created_by === profile.id || profile.role === "Super Admin") { const { data: users, error: usersError } = await admin.from("users").select("id,email,role,department").order("email"); if (usersError) throw usersError; return NextResponse.json({ data: { users: users ?? [], currentRole: profile.role, currentUserId: profile.id } }); } return NextResponse.json({ data: { users: [{ id: profile.id, email: profile.email, role: profile.role, department: profile.department }], currentRole: profile.role, currentUserId: profile.id } }); }

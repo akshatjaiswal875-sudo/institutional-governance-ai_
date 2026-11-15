@@ -44,6 +44,10 @@ as $$
       select 1 from public.participants p
       where p.meeting_id = target_meeting_id and p.user_id = (select auth.uid())
     )
+    or exists (
+      select 1 from public.meetings m
+      where m.id = target_meeting_id and m.assigned_approver_id = (select auth.uid())
+    )
   );
 $$;
 

@@ -39,6 +39,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const { supabase, profile } = await requireUser();
     const { data: meeting } = await supabase.from("meetings").select("id,created_by").eq("id", params.id).maybeSingle();
     if (!meeting) return NextResponse.json({ error: "Meeting not found." }, { status: 404 });
+    if (meeting.created_by !== profile.id) return NextResponse.json({ error: "Only the meeting creator can upload recordings." }, { status: 403 });
     const form = await request.formData(); const file = form.get("file");
     if (!(file instanceof File)) return NextResponse.json({ error: "Recording file is required." }, { status: 400 });
     if (!isValidRecording(file)) return NextResponse.json({ error: "Upload a non-empty audio/video recording of 100 MB or smaller." }, { status: 400 });
@@ -60,6 +61,8 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     if (!recordingId) return NextResponse.json({ error: "recordingId is required." }, { status: 400 });
     const recording = await getMeetingRecording(supabase, params.id, recordingId);
     if (!recording) return NextResponse.json({ error: "Recording not found." }, { status: 404 });
+    const { data: meeting } = await supabase.from("meetings").select("created_by").eq("id", params.id).maybeSingle();
+    if (meeting?.created_by !== profile.id) return NextResponse.json({ error: "Only the meeting creator can delete recordings." }, { status: 403 });
     const admin = createAdminClient();
     const { data: transcript, error: transcriptLookupError } = await admin.from("meeting_transcripts").select("id").eq("recording_id", recording.id).maybeSingle();
     if (transcriptLookupError) throw transcriptLookupError;
@@ -79,6 +82,8 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     if (!(file instanceof File) || !isValidRecording(file)) return NextResponse.json({ error: "A valid audio/video recording of 100 MB or smaller is required." }, { status: 400 });
     if (!oldRecordingId) return NextResponse.json({ error: "recordingId is required." }, { status: 400 });
     const oldRecording = await getMeetingRecording(supabase, params.id, oldRecordingId); if (!oldRecording) return NextResponse.json({ error: "Recording not found." }, { status: 404 });
+    const { data: meeting } = await supabase.from("meetings").select("created_by").eq("id", params.id).maybeSingle();
+    if (meeting?.created_by !== profile.id) return NextResponse.json({ error: "Only the meeting creator can replace recordings." }, { status: 403 });
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_") || "recording";
     const storagePath = `meetings/${params.id}/${crypto.randomUUID()}-${safeName}`;
     const upload = await supabase.storage.from("meeting-media").upload(storagePath, file, { upsert: false, contentType: file.type }); if (upload.error) throw upload.error;

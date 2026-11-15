@@ -2,11 +2,9 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { recordAudit } from "@/lib/audit";
 
-const MINUTES_MANAGERS = ["Director", "Principal", "HOD", "Coordinator", "Super Admin", "Meeting Secretary", "Faculty / Officer"] as const;
-
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   try {
-    const { supabase, profile } = await requireUser([...MINUTES_MANAGERS]);
+    const { supabase, profile } = await requireUser();
     const body = await request.json();
     const rawTranscript = typeof body.rawTranscript === "string" ? body.rawTranscript.trim() : "";
     const summary = typeof body.summary === "string" ? body.summary.trim() : null;

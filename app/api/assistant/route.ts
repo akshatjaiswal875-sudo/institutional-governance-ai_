@@ -79,6 +79,20 @@ function readableRecord(kind: string, record: Record<string, unknown>): string {
   return `[${kind}] ${fields.join(" | ")}`;
 }
 
+function readableSearchChunk(row: SearchRow): string {
+  const content = typeof row.chunk_content === "string" ? row.chunk_content.trim() : "";
+  if (!content) return "";
+  try {
+    const parsed = JSON.parse(content) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return readableRecord(row.parent_type, parsed as Record<string, unknown>);
+    }
+  } catch {
+    // Normal text chunks are already readable and should be preserved.
+  }
+  return `[${row.parent_type}]${content.length > 5000 ? content.slice(0, 5000) + "…" : content}`;
+}
+
 function addSource(sources: AssistantSource[], sourceKeys: Set<string>, parent_type: string, parent_id: string, metadata: Record<string, unknown> = {}): void {
   const key = parent_type + ':' + parent_id;
   if (sourceKeys.has(key)) return;
@@ -137,7 +151,7 @@ export async function POST(req: NextRequest) {
       console.warn('[assistant] keyword_search failed; using direct retrieval:', error);
     }
 
-    const contextParts: string[] = rows.map((row) => `[${row.parent_type}:${row.parent_id}] ${row.chunk_content}`);
+    const contextParts: string[] = rows.map(readableSearchChunk).filter(Boolean);
     const searchTerms = extractSearchTerms(body.message);
     let directMeetings: Array<Record<string, unknown>> = [];
 

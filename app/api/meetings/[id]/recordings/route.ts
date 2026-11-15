@@ -56,7 +56,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const { supabase, profile } = await requireUser([...RECORDING_MANAGERS]);
+    const { supabase, profile } = await requireUser();
     const recordingId = request.nextUrl.searchParams.get("recordingId");
     if (!recordingId) return NextResponse.json({ error: "recordingId is required." }, { status: 400 });
     const recording = await getMeetingRecording(supabase, params.id, recordingId);
@@ -77,7 +77,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
 
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const { supabase, profile } = await requireUser([...RECORDING_MANAGERS]);
+    const { supabase, profile } = await requireUser();
     const form = await request.formData(); const file = form.get("file"); const oldRecordingId = String(form.get("recordingId") || "");
     if (!(file instanceof File) || !isValidRecording(file)) return NextResponse.json({ error: "A valid audio/video recording of 100 MB or smaller is required." }, { status: 400 });
     if (!oldRecordingId) return NextResponse.json({ error: "recordingId is required." }, { status: 400 });

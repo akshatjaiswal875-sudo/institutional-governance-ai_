@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { replaceMeetingEmbeddings } from "@/lib/ai/meeting-embeddings";
 import { requireUser } from "@/lib/auth";
+import { canManageMeeting } from "@/lib/meeting-permissions";
 
 export async function POST(_request: Request, { params }: { params: { id: string } }) {
   try {
@@ -12,7 +13,7 @@ export async function POST(_request: Request, { params }: { params: { id: string
     if (meetingError || transcriptError) throw meetingError ?? transcriptError;
     if (!meeting) return NextResponse.json({ error: "Meeting not found." }, { status: 404 });
     const { data: owner } = await supabase.from("meetings").select("created_by").eq("id", params.id).maybeSingle();
-    if (owner?.created_by !== profile.id) return NextResponse.json({ error: "Only the meeting creator can re-index this meeting." }, { status: 403 });
+    if (!owner || !canManageMeeting({ userId: profile.id, creatorId: owner.created_by, role: profile.role })) return NextResponse.json({ error: "Only the meeting creator can re-index this meeting." }, { status: 403 });
     if (!transcript?.transcript) return NextResponse.json({ error: "No completed transcript is available to index." }, { status: 400 });
     const chunkCount = await replaceMeetingEmbeddings(supabase, meeting.id, meeting.title, transcript.transcript);
     return NextResponse.json({ data: { meeting_id: meeting.id, chunk_count: chunkCount } });

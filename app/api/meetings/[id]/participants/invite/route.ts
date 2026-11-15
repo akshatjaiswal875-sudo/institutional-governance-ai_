@@ -3,11 +3,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireUser } from "@/lib/auth";
 import { sendMeetingInvitation } from "@/lib/invitations";
 
-const MEETING_MANAGERS = ["Director", "Principal", "HOD", "Coordinator", "Coordinators", "Super Admin", "Meeting Secretary"] as const;
-
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   try {
-    const { supabase } = await requireUser([...MEETING_MANAGERS]);
+    const { supabase } = await requireUser();
     const body: unknown = await request.json();
     const participantId = typeof body === "object" && body !== null && "participantId" in body && typeof body.participantId === "string"
       ? body.participantId.trim()
@@ -22,6 +20,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
 
     if (meetingError || participantError || agendaError) throw meetingError ?? participantError ?? agendaError;
     if (!meeting) return NextResponse.json({ error: "Meeting not found." }, { status: 404 });
+    if (meeting.created_by !== (await requireUser()).profile.id) return NextResponse.json({ error: "Only the meeting creator can send invitations." }, { status: 403 });
     if (!participant) return NextResponse.json({ error: "Participant relation not found." }, { status: 404 });
 
     const admin = createAdminClient();

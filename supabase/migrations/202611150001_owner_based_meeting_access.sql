@@ -239,3 +239,14 @@ create policy action_items_owner_write on public.action_items
 for all to authenticated
 using (public.owns_meeting(meeting_id))
 with check (public.owns_meeting(meeting_id));
+
+-- Meeting embeddings follow the same owner/member visibility rules.
+drop policy if exists meeting_embeddings_member_read on public.embeddings;
+drop policy if exists meeting_embeddings_owner_write on public.embeddings;
+create policy meeting_embeddings_member_read on public.embeddings
+for select to authenticated
+using (parent_type = 'meeting' and public.is_meeting_member(parent_id));
+create policy meeting_embeddings_owner_write on public.embeddings
+for all to authenticated
+using (parent_type = 'meeting' and public.owns_meeting(parent_id))
+with check (parent_type = 'meeting' and public.owns_meeting(parent_id));

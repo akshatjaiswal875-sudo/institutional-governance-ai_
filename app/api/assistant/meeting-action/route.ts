@@ -41,7 +41,7 @@ function asRole(value: string): UserRole | null { return (USER_ROLES as readonly
 
 export async function POST(request: Request) {
   try {
-    const { supabase, user, profile } = await requireUser(["Super Admin"]);
+    const { supabase, user, profile } = await requireUser();
     const admin = createAdminClient(); const body = await request.json(); const action = clean(body?.action);
 
     if (action === "prepare") {
@@ -108,7 +108,7 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("[assistant/meeting-action]", error);
     if (error instanceof Error && error.message === "UNAUTHORIZED") return NextResponse.json({ error: "Authentication required." }, { status: 401 });
-    if (error instanceof Error && error.message === "FORBIDDEN") return NextResponse.json({ error: "Only Super Admin can create meetings through the AI Assistant." }, { status: 403 });
+    if (error instanceof Error && error.message === "FORBIDDEN") return NextResponse.json({ error: "Only the meeting creator can manage this meeting." }, { status: 403 });
     if (error instanceof Error && error.message === "PROFILE_NOT_FOUND") return NextResponse.json({ error: "Your login is missing a public.users profile. Ask a Super Admin to create/link your profile." }, { status: 403 });
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to process meeting action." }, { status: 500 });
   }

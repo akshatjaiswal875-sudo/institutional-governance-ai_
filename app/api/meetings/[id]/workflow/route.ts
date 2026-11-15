@@ -46,9 +46,11 @@ export async function POST(request: Request, { params }: { params: { id: string 
       nextStatus = "Published";
     }
 
-    const { data, error } = await supabase.from("meetings").update({ assigned_approver_id: assignedApproverId, status: nextStatus }).eq("id", params.id).select("id,status,assigned_approver_id").single();
+    // The assigned approver may change only the workflow decision; content edits remain owner-only.
+    const workflowWriter = (action === "approve" || action === "reject" || (action === "publish" && !isOwner)) ? createAdminClient() : supabase;
+    const { data, error } = await workflowWriter.from("meetings").update({ assigned_approver_id: assignedApproverId, status: nextStatus }).eq("id", params.id).select("id,status,assigned_approver_id").single();
     if (error) throw error;
-    await recordAudit(supabase, profile.id, action === "assign" ? "ASSIGN_APPROVER" : `${action.toUpperCase()}_MEETING`, "meetings", params.id, { status: nextStatus, assigned_approver_id: assignedApproverId });
+    await recordAudit(workflowWriter, profile.id, action === "assign" ? "ASSIGN_APPROVER" : `${action.toUpperCase()}_MEETING`, "meetings", params.id, { status: nextStatus, assigned_approver_id: assignedApproverId });
     return NextResponse.json({ data });
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHORIZED") return NextResponse.json({ error: "Authentication required." }, { status: 401 });

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { recordAudit } from "@/lib/audit";
+import { canManageMeeting } from "@/lib/meeting-permissions";
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   try {
@@ -17,7 +18,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
     const { data: meeting, error: meetingError } = await supabase.from("meetings").select("id,title,date,created_by").eq("id", params.id).maybeSingle();
     if (meetingError) throw meetingError;
     if (!meeting) return NextResponse.json({ error: "Meeting not found." }, { status: 404 });
-    if (meeting.created_by !== profile.id) return NextResponse.json({ error: "Only the meeting organizer can assign tasks for this meeting." }, { status: 403 });
+    if (!canManageMeeting({ userId: profile.id, creatorId: meeting.created_by, role: profile.role })) return NextResponse.json({ error: "Only the meeting organizer can assign tasks for this meeting." }, { status: 403 });
 
     const admin = createAdminClient();
     const { data: assignee, error: assigneeError } = await admin.from("users").select("id,email,role,department").ilike("email", assigneeEmail).maybeSingle();

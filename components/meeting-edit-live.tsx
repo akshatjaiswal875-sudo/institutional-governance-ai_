@@ -17,13 +17,20 @@ export default function MeetingEditLive() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    fetch(`/api/meetings/${params.id}`)
-      .then(async response => {
+    Promise.all([
+      fetch(`/api/meetings/${params.id}`).then(async response => {
         const result = await response.json();
         if (!response.ok) throw new Error(result.error ?? "Unable to load meeting.");
         return result.data.meeting;
-      })
-      .then(data => {
+      }),
+      fetch(`/api/meetings/${params.id}/participants`).then(async response => {
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error ?? "Unable to verify meeting ownership.");
+        return result.data.currentUserId as string;
+      }),
+    ])
+      .then(([data, currentUserId]) => {
+        if (data.created_by !== currentUserId) throw new Error("Only the person who created this meeting can edit it.");
         setMeeting(data);
         setTitle(data.title ?? "");
         setDate(data.date ? new Date(data.date).toISOString().slice(0, 16) : "");

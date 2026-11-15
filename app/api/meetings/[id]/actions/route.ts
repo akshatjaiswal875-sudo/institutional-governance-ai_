@@ -2,12 +2,11 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { recordAudit } from "@/lib/audit";
-
-const ACTION_CREATORS = ["Director", "Principal", "HOD"] as const;
+import { canManageMeeting } from "@/lib/meeting-permissions";
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   try {
-    const { supabase, profile } = await requireUser([...ACTION_CREATORS]);
+    const { supabase, profile } = await requireUser();
     const body = await request.json();
     const task = typeof body.task === "string" ? body.task.trim() : "";
     const assigneeEmail = typeof body.assigneeEmail === "string" ? body.assigneeEmail.trim().toLowerCase() : "";
@@ -19,7 +18,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
     const { data: meeting, error: meetingError } = await supabase.from("meetings").select("id,title,date,created_by").eq("id", params.id).maybeSingle();
     if (meetingError) throw meetingError;
     if (!meeting) return NextResponse.json({ error: "Meeting not found." }, { status: 404 });
-    if (meeting.created_by !== profile.id) return NextResponse.json({ error: "Only the meeting organizer can assign tasks for this meeting." }, { status: 403 });
+    if (!canManageMeeting({ userId: profile.id, creatorId: meeting.created_by, role: profile.role })) return NextResponse.json({ error: "Only the meeting organizer can assign tasks for this meeting." }, { status: 403 });
 
     const admin = createAdminClient();
     const { data: assignee, error: assigneeError } = await admin.from("users").select("id,email,role,department").ilike("email", assigneeEmail).maybeSingle();
@@ -42,7 +41,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
     return NextResponse.json({ data: { ...data, assignee } }, { status: 201 });
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHORIZED") return NextResponse.json({ error: "Authentication required." }, { status: 401 });
-    if (error instanceof Error && error.message === "FORBIDDEN") return NextResponse.json({ error: "Only Director, Principal or HOD can assign tasks." }, { status: 403 });
+    if (error instanceof Error && error.message === "FORBIDDEN") return NextResponse.json({ error: "Only the meeting creator can assign tasks." }, { status: 403 });
     return NextResponse.json({ error: "Unable to assign the task." }, { status: 500 });
   }
 }

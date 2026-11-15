@@ -40,7 +40,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
     if (!participant) return NextResponse.json({ error: "You are not an invited participant for this meeting." }, { status: 403 });
     if (participant.attendance_status === "Declined") return NextResponse.json({ error: "You have already declined this meeting." }, { status: 409 });
 
-    const { error: updateError } = await supabase
+    const { error: updateError } = await admin
       .from("participants")
       .update({ attendance_status: "Declined" })
       .eq("id", participant.id)
@@ -58,7 +58,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
         reason,
       });
     } catch (emailError) {
-      await supabase.from("participants").update({ attendance_status: participant.attendance_status }).eq("id", participant.id).eq("user_id", profile.id);
+      await admin.from("participants").update({ attendance_status: participant.attendance_status }).eq("id", participant.id).eq("user_id", profile.id);
       throw emailError;
     }
 

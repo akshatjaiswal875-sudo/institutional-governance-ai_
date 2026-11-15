@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { recordAudit } from "@/lib/audit";
 
-const MEETING_CREATORS = ["Director", "Principal", "HOD", "Coordinators", "Coordinator", "Super Admin", "Meeting Secretary"] as const;
-
 export async function GET() {
   try {
     const { supabase } = await requireUser();
@@ -21,7 +19,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const { supabase, user, profile } = await requireUser([...MEETING_CREATORS]);
+    const { supabase, user, profile } = await requireUser();
     const body: unknown = await request.json();
     const input = body && typeof body === "object" ? body as Record<string, unknown> : {};
     const title = typeof input.title === "string" ? input.title.trim() : "";
@@ -98,7 +96,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Authentication required." }, { status: 401 });
     }
     if (error instanceof Error && error.message === "FORBIDDEN") {
-      return NextResponse.json({ error: "You do not have permission to create meetings." }, { status: 403 });
+      return NextResponse.json({ error: "Authentication is required to create meetings." }, { status: 403 });
     }
     console.error("POST /api/meetings failed:", error);
     return NextResponse.json({ error: "Unable to create meeting." }, { status: 500 });

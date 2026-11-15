@@ -4,7 +4,7 @@ import { transcribe, summarizeTranscript, extractActions } from "@/lib/ai/pipeli
 import { recordAudit } from "@/lib/audit";
 
 export const runtime = "nodejs";
-export const maxDuration = 600;
+export const maxDuration = 60;
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       .select("id,status").single();
     if (analysisError) throw analysisError;
 
-    await supabase.from("meeting_recordings").update({ status: "processed", error_message: null }).eq("id", recordingId);
+    await supabase.from("meeting_recordings").update({ status: "completed", error_message: null }).eq("id", recordingId);
     await recordAudit(supabase, profile.id, "MEETING_RECORDING_PROCESSED", "meeting_recordings", recordingId, { meeting_id: params.id, transcript_id: transcript.id, analysis_id: analysis.id });
     return NextResponse.json({ data: { transcriptId: transcript.id, analysisId: analysis.id, status: analysis.status } });
   } catch (error) {

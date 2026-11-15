@@ -64,7 +64,7 @@ drop policy if exists meetings_owner_insert on public.meetings;
 drop policy if exists meetings_owner_update on public.meetings;
 drop policy if exists meetings_owner_delete on public.meetings;
 create policy meetings_member_read on public.meetings
-  for select to authenticated using (private.is_meeting_member(id));
+  for select to authenticated using (private.is_meeting_member(id) or assigned_approver_id = (select auth.uid()));
 create policy meetings_owner_insert on public.meetings
   for insert to authenticated with check (created_by = (select auth.uid()));
 create policy meetings_owner_update on public.meetings

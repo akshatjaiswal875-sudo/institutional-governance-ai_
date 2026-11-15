@@ -46,7 +46,7 @@ function timeText(value: unknown): string | null {
 
 export async function POST(request: Request) {
   try {
-    const { user } = await requireUser(["Super Admin"]);
+    const { user } = await requireUser();
     const form = await request.formData();
     const file = form.get("file");
     if (!(file instanceof File)) return NextResponse.json({ error: "Upload an .xlsx, .xls, or .csv timetable file." }, { status: 400 });
@@ -90,7 +90,7 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("[calendar/timetable/import]", error);
     if (error instanceof Error && error.message === "UNAUTHORIZED") return NextResponse.json({ error: "Authentication required." }, { status: 401 });
-    if (error instanceof Error && error.message === "FORBIDDEN") return NextResponse.json({ error: "Only Super Admin can upload institutional timetables." }, { status: 403 });
+    if (error instanceof Error && error.message === "FORBIDDEN") return NextResponse.json({ error: "Authentication is required to upload institutional timetables." }, { status: 403 });
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to import timetable." }, { status: 500 });
   }
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canApproveMeeting, canManageMeeting } from "@/lib/meeting-permissions";
+import { canApproveMeeting, canManageMeeting } from "../lib/meeting-permissions";
 
 describe("owner-based meeting permissions", () => {
   const meeting = { creatorId: "owner", assignedApproverId: "approver" };

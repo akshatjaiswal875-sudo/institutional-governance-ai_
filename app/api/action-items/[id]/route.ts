@@ -7,8 +7,6 @@ const TRANSITIONS: Record<string, string[]> = {
   "In Progress": ["Pending", "Completed"],
   Completed: ["In Progress"],
 };
-const GOVERNANCE_MANAGERS = ["Director", "Principal", "HOD", "Coordinator", "Super Admin", "Meeting Secretary"] as const;
-
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
   try {
     const { supabase, profile } = await requireUser([
@@ -21,10 +19,8 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     const { data: current, error: readError } = await supabase.from("action_items").select("id,status,assignee_id,created_by,meeting_id,task").eq("id", params.id).single();
     if (readError || !current) return NextResponse.json({ error: "Action item not found." }, { status: 404 });
 
-    const canManage = GOVERNANCE_MANAGERS.includes(profile.role as typeof GOVERNANCE_MANAGERS[number]);
-    const isAssignee = current.assignee_id === profile.id;
-    const isCreator = current.created_by === profile.id;
-    if (!canManage && !isAssignee && !isCreator) return NextResponse.json({ error: "You are not authorized to update this action item." }, { status: 403 });
+    const { data: meeting } = await supabase.from("meetings").select("created_by").eq("id", current.meeting_id).maybeSingle();
+    if (!meeting || meeting.created_by !== profile.id) return NextResponse.json({ error: "Only the meeting creator can update this action item." }, { status: 403 });
     if (current.status === nextStatus) return NextResponse.json({ data: current });
     if (!TRANSITIONS[current.status]?.includes(nextStatus)) return NextResponse.json({ error: `Invalid status transition: ${current.status} → ${nextStatus}.` }, { status: 409 });
 

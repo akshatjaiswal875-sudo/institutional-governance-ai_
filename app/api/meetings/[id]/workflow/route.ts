@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { recordAudit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { canManageMeeting, canApproveMeeting } from "@/lib/meeting-permissions";
 
 const actions = ["assign", "submit", "approve", "reject", "publish"] as const;
 type WorkflowAction = (typeof actions)[number];
@@ -16,7 +17,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
     const { data: meeting } = await supabase.from("meetings").select("id,status,assigned_approver_id,created_by").eq("id", params.id).maybeSingle();
     if (!meeting) return NextResponse.json({ error: "Meeting not found." }, { status: 404 });
 
-    const isOwner = meeting.created_by === profile.id;
+    const isOwner = canManageMeeting({ userId: profile.id, creatorId: meeting.created_by, role: profile.role });
     let nextStatus = meeting.status;
     let assignedApproverId = meeting.assigned_approver_id;
 
@@ -36,8 +37,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
       if (!["Draft", "Rejected", "Transcribed"].includes(meeting.status)) return NextResponse.json({ error: "Only draft, rejected, or transcribed meetings can be submitted." }, { status: 400 });
       nextStatus = "Pending Approval";
     } else if (action === "approve" || action === "reject") {
-      if (profile.role !== "Super Admin" && profile.role !== "Faculty / Officer") return NextResponse.json({ error: "Only the assigned approver can review this meeting." }, { status: 403 });
-      if (profile.role === "Faculty / Officer" && meeting.assigned_approver_id !== profile.id) return NextResponse.json({ error: "Only the assigned approver can review this meeting." }, { status: 403 });
+      if (!canApproveMeeting({ userId: profile.id, creatorId: meeting.created_by, assignedApproverId: meeting.assigned_approver_id, role: profile.role })) return NextResponse.json({ error: "Only the assigned approver or Super Admin can review this meeting." }, { status: 403 });
       if (meeting.status !== "Pending Approval") return NextResponse.json({ error: "Only pending meetings can be reviewed." }, { status: 400 });
       nextStatus = action === "approve" ? "Approved" : "Rejected";
     } else {

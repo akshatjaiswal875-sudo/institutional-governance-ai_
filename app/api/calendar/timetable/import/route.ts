@@ -59,8 +59,14 @@ function weeklyPeriod(value: unknown, afterLunch: boolean): { start: string; end
     return String(hour).padStart(2, "0") + ":" + String(Number(minuteValue)).padStart(2, "0");
   };
   const start = convert(tokens[0][1], tokens[0][2]);
-  const end = convert(tokens[1][1], tokens[1][2]);
-  if (!start || !end || end <= start) return null;
+  let end = convert(tokens[1][1], tokens[1][2]);
+  if (!start || !end) return null;
+  if (end <= start && !afterLunch) {
+    const endHour = Number(end.slice(0, 2));
+    const startHour = Number(start.slice(0, 2));
+    if (startHour >= 9 && endHour >= 1 && endHour <= 6) end = String(endHour + 12).padStart(2, "0") + end.slice(2);
+  }
+  if (end <= start) return null;
   return { start, end };
 }
 function parseWeeklyMatrix(matrix: unknown[][], email: string, filename: string) {

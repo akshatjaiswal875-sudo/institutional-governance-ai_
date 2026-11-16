@@ -86,7 +86,7 @@ export function NaturalGovernanceAssistant() {
       const response = await fetch("/api/calendar/timetable/import", { method: "POST", body: form });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Timetable upload failed.");
-      setMessages(prev => [...prev, { role: "assistant", content: `Imported ${result.imported} timetable rows from ${result.source}. ${result.skipped ? `${result.skipped} invalid rows were skipped.` : "All rows were imported successfully."}` }]);
+      setMessages(prev => [...prev, { role: "assistant", content: `Imported ${result.imported} ${result.format === "weekly" ? "weekly recurring periods" : "dated timetable rows"} from ${result.source}. ${result.skipped ? `${result.skipped} rows were skipped.` : "All valid periods were imported."} ${result.message ?? ""}` }]);
       setTimetableFile(null);
       const picker = document.getElementById("institutional-timetable-file") as HTMLInputElement | null;
       if (picker) picker.value = "";

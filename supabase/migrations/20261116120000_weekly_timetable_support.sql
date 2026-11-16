@@ -17,6 +17,7 @@ alter table public.institutional_timetable_entries
   add constraint institutional_timetable_entries_schedule_shape check (
     (
       is_recurring_weekly = true
+      and weekday is not null
       and weekday between 1 and 7
       and start_time is not null
       and end_time is not null

@@ -167,6 +167,15 @@ export function NaturalGovernanceAssistant() {
 
   return <div className="mx-auto max-w-5xl space-y-6">
     <div><h1 className="text-3xl font-semibold">AI Governance Assistant</h1><p className="mt-2 text-slate-400">Talk naturally about meetings, decisions, action items, policies and events.</p></div>
+    <section className="card border border-cyan-400/20 p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0"><h2 className="font-semibold">My weekly timetable</h2><p className="mt-1 text-sm text-slate-400">Available to every signed-in user, including HOD and Faculty accounts. Upload your own weekly Excel schedule here.</p><p className="mt-1 text-xs text-slate-500">Accepted: .xlsx, .xls, .csv · Weekly layout: Day rows, period time columns, and subject/section cells. Free or blank periods are ignored.</p></div>
+        <div className="flex w-full flex-col gap-2 sm:max-w-sm">
+          <input id="institutional-timetable-file" type="file" accept=".xlsx,.xls,.csv" onChange={e => setTimetableFile(e.target.files?.[0] ?? null)} className="block w-full text-xs text-slate-400 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-800 file:px-3 file:py-2 file:text-slate-200"/>
+          <button onClick={() => void uploadTimetable()} disabled={!timetableFile || uploadingTimetable} className="btn btn-secondary w-full">{uploadingTimetable ? "Importing timetable…" : "Upload my timetable"}</button>
+        </div>
+      </div>
+    </section>
     <div className="grid gap-6 lg:grid-cols-[1fr_330px]">
       <section className="card flex min-h-[560px] flex-col p-5">
         <div className="flex-1 space-y-4 overflow-auto pr-1">
@@ -179,13 +188,7 @@ export function NaturalGovernanceAssistant() {
       </section>
       <aside className="space-y-4">
         <div className="card p-5"><h2 className="font-semibold">Create a meeting with AI</h2><p className="mt-2 text-sm text-slate-400">Any signed-in user can create a meeting. You will own and manage the meeting you create.</p><button onClick={() => { setError(""); setMeetingDialogOpen(true); }} className="btn btn-primary mt-4 inline-flex items-center gap-2" disabled={busy}><CalendarPlus size={17}/>Create meeting with AI</button></div>
-        <div className="card p-5">
-          <h2 className="font-semibold">Institution timetable</h2>
-          <p className="mt-2 text-sm text-slate-400">Upload the Excel timetable so lectures, faculty periods, rooms and institutional events are blocked during AI scheduling.</p>
-          <p className="mt-2 text-xs text-slate-500">Required columns: Date, Start Time, End Time, Subject/Title. Optional: Type, Department, Faculty Email, Room.</p>
-          <input id="institutional-timetable-file" type="file" accept=".xlsx,.xls,.csv" onChange={e => setTimetableFile(e.target.files?.[0] ?? null)} className="mt-3 block w-full text-xs text-slate-400 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-800 file:px-3 file:py-2 file:text-slate-200"/>
-          <button onClick={() => void uploadTimetable()} disabled={!timetableFile || uploadingTimetable} className="btn btn-secondary mt-3 w-full">{uploadingTimetable ? "Importing timetable…" : "Upload timetable"}</button>
-        </div>
+
         {draft && <div className="card p-5"><h2 className="font-semibold">Review meeting</h2><div className="mt-3 space-y-2 text-sm"><p><b>Title:</b> {draft.title}</p><p><b>AI-selected time:</b> {draft.date ? new Date(draft.date).toLocaleString("en-IN", { dateStyle: "full", timeStyle: "short" }) : findingBestTime ? "Checking calendars…" : "Not selected yet"}</p><p><b>Location:</b> {draft.location ?? "Not specified"}</p><p><b>Participants:</b> {draft.participantQuery || "Not specified"}</p>{draft.topic && <p><b>Agenda:</b> {draft.topic}</p>}</div>
           {participants.length > 0 && <div className="mt-4 max-h-48 space-y-2 overflow-auto">{participants.map(p => <label key={p.id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={selected.includes(p.id)} onChange={e => { setSelected(v => e.target.checked ? [...v, p.id] : v.filter(id => id !== p.id)); setBestTimeResult(null); }}/><span>{p.email}{p.department ? ` · ${p.department}` : ""}</span></label>)}</div>}
           {participants.length === 0 && draft.participantQuery && <p className="mt-4 text-sm text-amber-300">No matching participant was found. Try a department such as Faculty or an exact user email.</p>}

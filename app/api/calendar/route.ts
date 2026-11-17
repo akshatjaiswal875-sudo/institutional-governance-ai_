@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 
+export const dynamic = "force-dynamic";
+
 const IST = "+05:30";
 const LEADERS = ["Director", "Principal", "HOD", "Coordinator", "Super Admin"];
 

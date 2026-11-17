@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { recordAudit } from "@/lib/audit";
-import { createAdminClient } from "@/lib/supabase/admin";
 
 const EVENT_CREATORS = ["Director", "Principal", "HOD", "Coordinator", "Super Admin"] as const;
 const EVENT_STATUSES = ["Draft", "Under Review", "Approved", "Published", "Upcoming", "Ongoing", "Completed", "Cancelled"] as const;

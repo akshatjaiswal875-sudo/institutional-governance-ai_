@@ -49,7 +49,7 @@ export function Nav() {
       setEmail(data.user.email ?? "");
       const [{ data: profile }, { count }] = await Promise.all([
         supabase.from("users").select("role").eq("id", data.user.id).maybeSingle(),
-        supabase.from("notifications").select("id", { count: "exact", head: true }).is("read_at", null),
+        supabase.from("notifications").select("id", { count: "exact", head: true }).eq("user_id", data.user.id).is("read_at", null),
       ]);
       if (active) { setRole(profile?.role ?? null); setUnread(count ?? 0); }
     });

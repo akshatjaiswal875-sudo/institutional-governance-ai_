@@ -20,7 +20,7 @@ function getNotificationHref(row: NotificationRow) {
     case "policies":
       return `/policies/${row.target_id}`;
     case "action_items":
-      return `/action-items/${row.target_id}`;
+      return `/my-workspace?taskId=${row.target_id}`;
     case "events":
       return `/events/${row.target_id}`;
     default:

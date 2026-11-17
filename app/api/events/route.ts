@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { recordAudit } from "@/lib/audit";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 const EVENT_CREATORS = ["Director", "Principal", "HOD", "Coordinator", "Super Admin"] as const;
 const EVENT_STATUSES = ["Draft", "Under Review", "Approved", "Published", "Upcoming", "Ongoing", "Completed", "Cancelled"] as const;
@@ -50,6 +51,19 @@ export async function POST(request: Request) {
     const { data, error } = await supabase.from("events").insert({ title, start_time: startTime, end_time: endTime, description: typeof body.description === "string" ? body.description.trim() || null : null, location: typeof body.location === "string" ? body.location.trim() || null : null, organizer_id: profile.id, status: requestedStatus }).select("id").single();
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
     await recordAudit(supabase, profile.id, "CREATE_EVENT", "events", data.id, { title, status: requestedStatus, creator_role: profile.role });
+    if (requestedStatus === "Published") {
+      const admin = createAdminClient();
+      const { data: recipients, error: recipientsError } = await admin.from("users").select("id").neq("id", profile.id);
+      if (recipientsError) console.error("[events] recipient lookup failed", recipientsError);
+      else if (recipients?.length) {
+        const { error: notificationError } = await admin.from("notifications").insert(recipients.map(recipient => ({
+          user_id: recipient.id, type: "event", title: "New institutional event",
+          message: `${title} has been published to the institutional calendar.`,
+          target_table: "events", target_id: data.id,
+        })));
+        if (notificationError) console.error("[events] publish notifications failed", notificationError);
+      }
+    }
     return NextResponse.json({ data }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to create event.";

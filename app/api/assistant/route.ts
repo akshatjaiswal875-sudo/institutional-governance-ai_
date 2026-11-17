@@ -61,11 +61,64 @@ function cleanIlikeTerm(term: string): string {
   return term.replace(/[\\%_]/g, (value) => '\\' + value);
 }
 
+function readableRecord(kind: string, record: Record<string, unknown>): string {
+  const title = typeof record.title === "string" && record.title.trim() ? record.title.trim() : `Untitled ${kind}`;
+  const fields: string[] = [`Title: ${title}`];
+  const status = record.status;
+  if (typeof status === "string" && status.trim()) fields.push(`Status: ${status}`);
+  const date = record.date ?? record.start_time;
+  if (typeof date === "string" && date.trim()) fields.push(`Date: ${date}`);
+  const end = record.end_time;
+  if (typeof end === "string" && end.trim()) fields.push(`End: ${end}`);
+  const location = record.location;
+  if (typeof location === "string" && location.trim()) fields.push(`Location: ${location}`);
+  const summary = record.summary ?? record.description ?? record.content;
+  if (typeof summary === "string" && summary.trim()) fields.push(`Details: ${summary.trim().slice(0, 1800)}`);
+  const version = record.version;
+  if (typeof version === "string" || typeof version === "number") fields.push(`Version: ${version}`);
+  return `[${kind}] ${fields.join(" | ")}`;
+}
+
+function readableSearchChunk(row: SearchRow): string {
+  const content = typeof row.chunk_content === "string" ? row.chunk_content.trim() : "";
+  if (!content) return "";
+  try {
+    const parsed = JSON.parse(content) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return `[${row.parent_type}:${row.parent_id}] ${readableRecord(row.parent_type, parsed as Record<string, unknown>)}`;
+    }
+  } catch {
+    // Normal text chunks are already readable and should be preserved.
+  }
+  return `[${row.parent_type}:${row.parent_id}] ${content.length > 5000 ? content.slice(0, 5000) + "…" : content}`;
+}
+
 function addSource(sources: AssistantSource[], sourceKeys: Set<string>, parent_type: string, parent_id: string, metadata: Record<string, unknown> = {}): void {
   const key = parent_type + ':' + parent_id;
   if (sourceKeys.has(key)) return;
   sourceKeys.add(key);
   sources.push({ parent_type, parent_id, ...metadata });
+}
+
+function recordFallback(sources: AssistantSource[]): string {
+  const useful = sources.filter((source) => typeof source.title === "string" && source.title.trim()).slice(0, 6);
+  if (!useful.length) return "I found relevant institutional records, but the AI providers are temporarily unavailable. Please try again shortly.";
+  const bullets = useful.map((source) => {
+    const kind = source.parent_type.replace(/_/g, " ");
+    const title = String(source.title).trim();
+    const status = typeof source.status === "string" ? ` · ${source.status}` : "";
+    const dateValue = source.date ?? source.start_time;
+    const date = typeof dateValue === "string" ? ` · ${dateValue}` : "";
+    return `- **${title}** — ${kind}${status}${date}`;
+  });
+  return `I found these matching institutional records. The AI summarization service is temporarily unavailable, so this is a record-based summary rather than an AI-generated interpretation:\\n\\n${bullets.join("\\n")}`;
+}
+
+function looksLikeRawDatabasePayload(value: string): boolean {
+  const text = value.trim();
+  if (!text) return true;
+  if ((text.startsWith("{") || text.startsWith("[")) && /"created_by"|"assigned_approver_id"|"parent_id"|"parent_type"/i.test(text)) return true;
+  return /\\{\\s*"id"\\s*:\\s*"[0-9a-f-]{20,}"\\s*,\\s*"title"/i.test(text);
 }
 
 export async function POST(req: NextRequest) {
@@ -98,7 +151,7 @@ export async function POST(req: NextRequest) {
       console.warn('[assistant] keyword_search failed; using direct retrieval:', error);
     }
 
-    const contextParts: string[] = rows.map((row) => `[${row.parent_type}:${row.parent_id}] ${row.chunk_content}`);
+    const contextParts: string[] = rows.map(readableSearchChunk).filter(Boolean);
     const searchTerms = extractSearchTerms(body.message);
     let directMeetings: Array<Record<string, unknown>> = [];
 
@@ -113,7 +166,7 @@ export async function POST(req: NextRequest) {
       directMeetings = Array.from(byId.values()).slice(0, 12);
       for (const meeting of directMeetings) {
         const id = String(meeting.id);
-        contextParts.push(`[meeting:${id}:title-match] ${JSON.stringify(meeting)}`);
+        contextParts.push(readableRecord("meeting", meeting));
         addSource(sources, sourceKeys, 'meeting', id, { title: meeting.title, retrieval: 'title-match' });
       }
     }
@@ -124,7 +177,7 @@ export async function POST(req: NextRequest) {
       directMeetings = (data ?? []) as Array<Record<string, unknown>>;
       for (const meeting of directMeetings) {
         const id = String(meeting.id);
-        contextParts.push(`[meeting:${id}:recent] ${JSON.stringify(meeting)}`);
+        contextParts.push(readableRecord("meeting", meeting));
         addSource(sources, sourceKeys, 'meeting', id, { title: meeting.title, retrieval: 'recent' });
       }
     }
@@ -146,14 +199,14 @@ export async function POST(req: NextRequest) {
       const policies = new Map<string, Record<string, unknown>>();
       for (const policy of policyResults.flat()) if (policy?.id) policies.set(String(policy.id), policy as Record<string, unknown>);
       for (const policy of policies.values()) {
-        contextParts.push(`[policy:${policy.id}:direct-match] ${JSON.stringify(policy)}`);
+        contextParts.push(readableRecord("policy", policy));
         addSource(sources, sourceKeys, 'policy', String(policy.id), { title: policy.title, retrieval: 'direct-match' });
       }
 
       const events = new Map<string, Record<string, unknown>>();
       for (const event of eventResults.flat()) if (event?.id) events.set(String(event.id), event as Record<string, unknown>);
       for (const event of events.values()) {
-        contextParts.push(`[event:${event.id}:direct-match] ${JSON.stringify(event)}`);
+        contextParts.push(readableRecord("event", event));
         addSource(sources, sourceKeys, 'event', String(event.id), { title: event.title, retrieval: 'direct-match' });
       }
     }
@@ -179,7 +232,7 @@ export async function POST(req: NextRequest) {
       if (decisions.error) throw decisions.error;
       if (minutes.error) throw minutes.error;
       if (actionItems.error) throw actionItems.error;
-      for (const meeting of meetings.data ?? []) { contextParts.push(`[meeting:${meeting.id}:details] ${JSON.stringify(meeting)}`); addSource(sources, sourceKeys, 'meeting', meeting.id, { title: meeting.title, retrieval: 'details' }); }
+      for (const meeting of meetings.data ?? []) { contextParts.push(readableRecord("meeting", meeting as Record<string, unknown>)); addSource(sources, sourceKeys, 'meeting', meeting.id, { title: meeting.title, retrieval: 'details' }); }
       for (const transcript of transcripts.data ?? []) { contextParts.push(`[meeting_transcript:${transcript.id}] meeting_id=${transcript.meeting_id}\n${transcript.transcript}`); addSource(sources, sourceKeys, 'meeting_transcript', transcript.id, { meeting_id: transcript.meeting_id, status: transcript.status }); }
       for (const analysis of analyses.data ?? []) { contextParts.push(`[meeting_ai_analysis:${analysis.id}] meeting_id=${analysis.meeting_id}\nsummary=${analysis.summary}\nkey_points=${JSON.stringify(analysis.key_points)}\nsuggested_minutes=${analysis.suggested_minutes ?? ''}\nextracted_decisions=${JSON.stringify(analysis.extracted_decisions)}\nextracted_action_items=${JSON.stringify(analysis.extracted_action_items)}`); addSource(sources, sourceKeys, 'meeting_ai_analysis', analysis.id, { meeting_id: analysis.meeting_id, status: analysis.status }); }
       for (const decision of decisions.data ?? []) { contextParts.push(`[decision:${decision.id}] meeting_id=${decision.meeting_id} decision=${decision.decision_text} action_item=${decision.action_item ?? ''} assignee_id=${decision.assignee_id ?? ''} due_date=${decision.due_date ?? ''} status=${decision.status}`); addSource(sources, sourceKeys, 'decision', decision.id, { meeting_id: decision.meeting_id }); }
@@ -191,21 +244,34 @@ export async function POST(req: NextRequest) {
     if (policyIds.length) {
       const { data, error } = await supabase.from('policies').select('id,title,content,version,status,effective_date,updated_at').in('id', policyIds);
       if (error) throw error;
-      for (const policy of data ?? []) { contextParts.push(`[policy:${policy.id}] ${JSON.stringify(policy)}`); addSource(sources, sourceKeys, 'policy', policy.id, { title: policy.title, version: policy.version, status: policy.status }); }
+      for (const policy of data ?? []) { contextParts.push(readableRecord("policy", policy as Record<string, unknown>)); addSource(sources, sourceKeys, 'policy', policy.id, { title: policy.title, version: policy.version, status: policy.status }); }
     }
 
     const eventIds = unique(rows.filter((row) => row.parent_type === 'event').map((row) => row.parent_id)).slice(0, 12);
     if (eventIds.length) {
       const { data, error } = await supabase.from('events').select('id,title,start_time,end_time,description,location').in('id', eventIds);
       if (error) throw error;
-      for (const event of data ?? []) { contextParts.push(`[event:${event.id}] ${JSON.stringify(event)}`); addSource(sources, sourceKeys, 'event', event.id, { title: event.title }); }
+      for (const event of data ?? []) { contextParts.push(readableRecord("event", event as Record<string, unknown>)); addSource(sources, sourceKeys, 'event', event.id, { title: event.title }); }
     }
 
     const context = contextParts.join('\n\n').slice(0, 115000);
     if (!context.trim()) return ok({ answer: 'I could not find a matching meeting, policy, or event record. Please try a more specific question.', sources: [] });
 
-    const answer = await answerMeetingQuestion(context, body.message);
-    return ok({ answer: answer || 'I could not find a matching meeting, policy, or event record. Please try a more specific question.', sources: sources.slice(0, 50) });
+    let answer: string;
+    let aiAvailable = true;
+    try {
+      answer = await answerMeetingQuestion(context, body.message);
+      if (looksLikeRawDatabasePayload(answer)) throw new Error("AI provider returned raw database data instead of a natural-language answer.");
+    } catch (providerError) {
+      aiAvailable = false;
+      console.error("[assistant] all answer providers failed or returned unrenderable output:", providerError instanceof Error ? providerError.message : providerError);
+      answer = recordFallback(sources);
+    }
+    return ok({
+      answer: answer || 'I could not find a matching meeting, policy, or event record. Please try a more specific question.',
+      aiAvailable,
+      sources: sources.slice(0, 50),
+    });
   } catch (error) {
     console.error('[assistant]', error);
     return fail(error instanceof Error ? error.message : 'Assistant failed', 500);

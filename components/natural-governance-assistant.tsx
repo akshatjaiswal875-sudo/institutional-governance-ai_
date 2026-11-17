@@ -10,7 +10,8 @@ async function api<T>(url: string, options?: RequestInit): Promise<T> {
   return result.data as T;
 }
 
-type Message = { role: "user" | "assistant"; content: string };
+type AssistantSource = { parent_type: string; parent_id: string; title?: string; status?: string; date?: string; start_time?: string };
+type Message = { role: "user" | "assistant"; content: string; sources?: AssistantSource[]; aiAvailable?: boolean };
 type ActionDraft = { title: string; date: string | null; location: string | null; participantQuery: string; topic: string; windowHint?: "next_week" | "next_7_days" };
 type Participant = { id: string; email: string; role: string; department?: string | null };
 type BestTimeSlot = { start: string; end: string; availableCount: number; participantCount: number; score: number; reason: string };
@@ -26,7 +27,7 @@ function inlineMarkdown(text: string): ReactNode[] {
   });
 }
 
-function AssistantMessage({ content }: { content: string }) {
+function AssistantMessage({ content, sources, aiAvailable }: { content: string; sources?: AssistantSource[]; aiAvailable?: boolean }) {
   const sourceMatches = [...content.matchAll(/\[(meeting|event|policy|decision|minutes|meeting_transcript|meeting_ai_analysis):([^\]]+)\]/gi)];
   const clean = content.replace(/\[(meeting|event|policy|decision|minutes|meeting_transcript|meeting_ai_analysis):[^\]]+\]/gi, "").replace(/\n{3,}/g, "\n\n").trim();
   const lines = clean.split(/\r?\n/);
@@ -55,7 +56,7 @@ function AssistantMessage({ content }: { content: string }) {
     blocks.push(<p key={index} className="my-2 leading-6 text-slate-200">{inlineMarkdown(line)}</p>);
   });
   flushList();
-  return <div className="text-[15px] leading-6">{blocks}{sourceMatches.length > 0 && <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-700/70 pt-3"><span className="text-xs font-medium uppercase tracking-wider text-slate-500">Sources</span>{Array.from(new Set(sourceMatches.map(match => match[1].toLowerCase()))).map(type => <span key={type} className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900/80 px-2.5 py-1 text-xs text-slate-300"><Check size={12} className="text-cyan-300" /> {type.replace(/_/g, " ")}</span>)}</div>}</div>;
+  return <div className="text-[15px] leading-6">{!aiAvailable && <div className="mb-3 rounded-lg border border-amber-400/20 bg-amber-400/5 px-3 py-2 text-xs text-amber-200">AI is temporarily unavailable. Showing a readable summary from accessible institutional records.</div>}{blocks}{sources?.length ? <div className="mt-4 border-t border-slate-700/70 pt-3"><span className="mb-2 block text-xs font-medium uppercase tracking-wider text-slate-500">Sources</span><div className="flex flex-wrap gap-2">{sources.slice(0, 8).map((source, index) => <span key={source.parent_type + source.parent_id + index} className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900/80 px-2.5 py-1 text-xs text-slate-300"><Check size={12} className="shrink-0 text-cyan-300"/><span className="truncate">{source.title || source.parent_type.replace(/_/g, " ")}</span></span>)}</div></div> : null}{sourceMatches.length > 0 && <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-700/70 pt-3"><span className="text-xs font-medium uppercase tracking-wider text-slate-500">Sources</span>{Array.from(new Set(sourceMatches.map(match => match[1].toLowerCase()))).map(type => <span key={type} className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900/80 px-2.5 py-1 text-xs text-slate-300"><Check size={12} className="text-cyan-300" /> {type.replace(/_/g, " ")}</span>)}</div>}</div>;
 }
 
 function formatSlot(start: string, end: string) {
@@ -85,7 +86,7 @@ export function NaturalGovernanceAssistant() {
       const response = await fetch("/api/calendar/timetable/import", { method: "POST", body: form });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Timetable upload failed.");
-      setMessages(prev => [...prev, { role: "assistant", content: `Imported ${result.imported} timetable rows from ${result.source}. ${result.skipped ? `${result.skipped} invalid rows were skipped.` : "All rows were imported successfully."}` }]);
+      setMessages(prev => [...prev, { role: "assistant", content: `Imported ${result.imported} ${result.format === "weekly" ? "weekly recurring periods" : "dated timetable rows"} from ${result.source}. ${result.skipped ? `${result.skipped} rows were skipped.` : "All valid periods were imported."} ${result.message ?? ""}` }]);
       setTimetableFile(null);
       const picker = document.getElementById("institutional-timetable-file") as HTMLInputElement | null;
       if (picker) picker.value = "";
@@ -96,7 +97,7 @@ export function NaturalGovernanceAssistant() {
   async function ask(text: string) {
     const message = text.trim(); if (!message || busy) return;
     setBusy(true); setError(""); setQuery(""); setMessages(prev => [...prev, { role: "user", content: message }]);
-    try { const result = await api<any>("/api/assistant", { method: "POST", body: JSON.stringify({ message }) }); setMessages(prev => [...prev, { role: "assistant", content: result.answer ?? "I couldn't find a useful answer." }]); }
+    try { const result = await api<any>("/api/assistant", { method: "POST", body: JSON.stringify({ message }) }); setMessages(prev => [...prev, { role: "assistant", content: result.answer ?? "I couldn't find a useful answer.", sources: Array.isArray(result.sources) ? result.sources : [], aiAvailable: result.aiAvailable !== false }]); }
     catch (e) { setError(e instanceof Error ? e.message : "Assistant failed."); }
     finally { setBusy(false); }
   }
@@ -166,11 +167,20 @@ export function NaturalGovernanceAssistant() {
 
   return <div className="mx-auto max-w-5xl space-y-6">
     <div><h1 className="text-3xl font-semibold">AI Governance Assistant</h1><p className="mt-2 text-slate-400">Talk naturally about meetings, decisions, action items, policies and events.</p></div>
+    <section className="card border border-cyan-400/20 p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0"><h2 className="font-semibold">My weekly timetable</h2><p className="mt-1 text-sm text-slate-400">Available to every signed-in user, including HOD and Faculty accounts. Upload your own weekly Excel schedule here.</p><p className="mt-1 text-xs text-slate-500">Accepted: .xlsx, .xls, .csv · Weekly layout: Day rows, period time columns, and subject/section cells. Free or blank periods are ignored.</p></div>
+        <div className="flex w-full flex-col gap-2 sm:max-w-sm">
+          <input id="institutional-timetable-file" type="file" accept=".xlsx,.xls,.csv" onChange={e => setTimetableFile(e.target.files?.[0] ?? null)} className="block w-full text-xs text-slate-400 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-800 file:px-3 file:py-2 file:text-slate-200"/>
+          <button onClick={() => void uploadTimetable()} disabled={!timetableFile || uploadingTimetable} className="btn btn-secondary w-full">{uploadingTimetable ? "Importing timetable…" : "Upload my timetable"}</button>
+        </div>
+      </div>
+    </section>
     <div className="grid gap-6 lg:grid-cols-[1fr_330px]">
       <section className="card flex min-h-[560px] flex-col p-5">
         <div className="flex-1 space-y-4 overflow-auto pr-1">
           {!messages.length && <div className="py-16 text-center"><Sparkles className="mx-auto mb-4" size={34}/><h2 className="text-xl font-semibold">How can I help?</h2><p className="mx-auto mt-2 max-w-lg text-slate-400">Ask in normal language. You don't need exact commands or database terms.</p><div className="mt-6 flex flex-wrap justify-center gap-2">{suggestions.map(s => <button key={s} onClick={() => void ask(s)} className="btn btn-secondary text-sm">{s}</button>)}</div></div>}
-          {messages.map((m, i) => <div key={i} className={`flex gap-3 ${m.role === "user" ? "justify-end" : "justify-start"}`}><div className={`max-w-[88%] rounded-2xl px-4 py-3 shadow-sm ${m.role === "user" ? "bg-indigo-600 text-white" : "border border-slate-700/80 bg-slate-800/90 text-slate-100"}`}><div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-wide opacity-70">{m.role === "user" ? <><UserRound size={14}/> You</> : <><Bot size={14}/> Governance AI</>}</div>{m.role === "assistant" ? <AssistantMessage content={m.content}/> : <div className="whitespace-pre-wrap leading-6">{m.content}</div>}</div></div>)}
+          {messages.map((m, i) => <div key={i} className={`flex gap-3 ${m.role === "user" ? "justify-end" : "justify-start"}`}><div className={`max-w-[88%] rounded-2xl px-4 py-3 shadow-sm ${m.role === "user" ? "bg-indigo-600 text-white" : "border border-slate-700/80 bg-slate-800/90 text-slate-100"}`}><div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-wide opacity-70">{m.role === "user" ? <><UserRound size={14}/> You</> : <><Bot size={14}/> Governance AI</>}</div>{m.role === "assistant" ? <AssistantMessage content={m.content} sources={m.sources} aiAvailable={m.aiAvailable}/> : <div className="whitespace-pre-wrap leading-6">{m.content}</div>}</div></div>)}
           {busy && <div className="flex items-center gap-2 text-sm text-slate-400"><Bot size={15}/> Assistant is thinking<span className="animate-pulse">...</span></div>}
         </div>
         {error && <p className="mb-3 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-sm text-red-300" role="alert">{error}</p>}
@@ -178,13 +188,7 @@ export function NaturalGovernanceAssistant() {
       </section>
       <aside className="space-y-4">
         <div className="card p-5"><h2 className="font-semibold">Create a meeting with AI</h2><p className="mt-2 text-sm text-slate-400">Any signed-in user can create a meeting. You will own and manage the meeting you create.</p><button onClick={() => { setError(""); setMeetingDialogOpen(true); }} className="btn btn-primary mt-4 inline-flex items-center gap-2" disabled={busy}><CalendarPlus size={17}/>Create meeting with AI</button></div>
-        <div className="card p-5">
-          <h2 className="font-semibold">Institution timetable</h2>
-          <p className="mt-2 text-sm text-slate-400">Upload the Excel timetable so lectures, faculty periods, rooms and institutional events are blocked during AI scheduling.</p>
-          <p className="mt-2 text-xs text-slate-500">Required columns: Date, Start Time, End Time, Subject/Title. Optional: Type, Department, Faculty Email, Room.</p>
-          <input id="institutional-timetable-file" type="file" accept=".xlsx,.xls,.csv" onChange={e => setTimetableFile(e.target.files?.[0] ?? null)} className="mt-3 block w-full text-xs text-slate-400 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-800 file:px-3 file:py-2 file:text-slate-200"/>
-          <button onClick={() => void uploadTimetable()} disabled={!timetableFile || uploadingTimetable} className="btn btn-secondary mt-3 w-full">{uploadingTimetable ? "Importing timetable…" : "Upload timetable"}</button>
-        </div>
+
         {draft && <div className="card p-5"><h2 className="font-semibold">Review meeting</h2><div className="mt-3 space-y-2 text-sm"><p><b>Title:</b> {draft.title}</p><p><b>AI-selected time:</b> {draft.date ? new Date(draft.date).toLocaleString("en-IN", { dateStyle: "full", timeStyle: "short" }) : findingBestTime ? "Checking calendars…" : "Not selected yet"}</p><p><b>Location:</b> {draft.location ?? "Not specified"}</p><p><b>Participants:</b> {draft.participantQuery || "Not specified"}</p>{draft.topic && <p><b>Agenda:</b> {draft.topic}</p>}</div>
           {participants.length > 0 && <div className="mt-4 max-h-48 space-y-2 overflow-auto">{participants.map(p => <label key={p.id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={selected.includes(p.id)} onChange={e => { setSelected(v => e.target.checked ? [...v, p.id] : v.filter(id => id !== p.id)); setBestTimeResult(null); }}/><span>{p.email}{p.department ? ` · ${p.department}` : ""}</span></label>)}</div>}
           {participants.length === 0 && draft.participantQuery && <p className="mt-4 text-sm text-amber-300">No matching participant was found. Try a department such as Faculty or an exact user email.</p>}

@@ -65,7 +65,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
   try {
     const { supabase, profile } = await requireUser();
-    const { data: meeting } = await supabase.from("meetings").select("id,created_by").eq("id", params.id).maybeSingle();
+    const { data: meeting } = await supabase.from("meetings").select("id,created_by,title,date,location").eq("id", params.id).maybeSingle();
     if (!meeting) return NextResponse.json({ error: "Meeting not found." }, { status: 404 });
     if (!canManageMeeting({ userId: profile.id, creatorId: meeting.created_by, role: profile.role })) return NextResponse.json({ error: "Only the meeting creator or Super Admin can edit this meeting." }, { status: 403 });
     const body = await request.json();
@@ -80,6 +80,23 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     const { data, error } = await supabase.from("meetings").update(payload).eq("id", params.id).select("*").single();
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
     await recordAudit(supabase, profile.id, "UPDATE_MEETING", "meetings", params.id, { ...payload, role: profile.role });
+    const changed = meeting.title !== data.title || meeting.date !== data.date || meeting.location !== data.location;
+    if (changed) {
+      const admin = createAdminClient();
+      const { data: participants, error: participantsError } = await admin.from("participants").select("user_id").eq("meeting_id", params.id);
+      if (participantsError) console.error("[meetings] participant notification lookup failed", participantsError);
+      else {
+        const recipients = [...new Set((participants ?? []).map(row => row.user_id).filter((id): id is string => Boolean(id) && id !== profile.id))];
+        if (recipients.length) {
+          const { error: notificationError } = await admin.from("notifications").insert(recipients.map(userId => ({
+            user_id: userId, type: "meeting", title: "Meeting details updated",
+            message: `${data.title} has a new schedule or meeting details. Please review the updated information.`,
+            target_table: "meetings", target_id: params.id,
+          })));
+          if (notificationError) console.error("[meetings] update notifications failed", notificationError);
+        }
+      }
+    }
     return NextResponse.json({ data });
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHORIZED") return NextResponse.json({ error: "Authentication required." }, { status: 401 });

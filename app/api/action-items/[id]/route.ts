@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { recordAudit } from "@/lib/audit";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 const TRANSITIONS: Record<string, string[]> = {
   Pending: ["In Progress", "Completed"],
@@ -26,6 +27,18 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     if (updateError) return NextResponse.json({ error: updateError.message }, { status: 400 });
 
     await recordAudit(supabase, profile.id, "ACTION_ITEM_STATUS_CHANGED", "action_items", params.id, { meeting_id: current.meeting_id, task: current.task, from_status: current.status, to_status: nextStatus });
+    if (current.assignee_id && current.assignee_id !== profile.id) {
+      const admin = createAdminClient();
+      const { error: notificationError } = await admin.from("notifications").insert({
+        user_id: current.assignee_id,
+        type: "task",
+        title: "Assigned task updated",
+        message: `The status of "${current.task}" changed from ${current.status} to ${nextStatus}.`,
+        target_table: "action_items",
+        target_id: params.id,
+      });
+      if (notificationError) console.error("[action-items] status notification failed", notificationError);
+    }
     return NextResponse.json({ data: updated });
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHORIZED") return NextResponse.json({ error: "Authentication required." }, { status: 401 });

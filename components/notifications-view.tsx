@@ -16,7 +16,7 @@ import {
 
 type Notification = {
   id: string;
-  type: "info" | "meeting" | "event" | "policy" | "action" | "system";
+  type: "info" | "meeting" | "event" | "policy" | "action" | "task" | "system";
   title: string;
   message: string;
   href?: string | null;
@@ -29,6 +29,7 @@ const icons = {
   event: CalendarDays,
   policy: FileText,
   action: ListChecks,
+  task: ListChecks,
   system: Settings2,
   info: Info,
 };

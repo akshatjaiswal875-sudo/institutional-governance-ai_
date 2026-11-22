@@ -1,5 +1,8 @@
 -- Improve hybrid retrieval by fusing semantic and lexical ranks (RRF).
--- SECURITY INVOKER preserves the caller's embeddings RLS visibility.
+-- Keep the existing embeddings RLS policies unchanged: they encode the
+-- institution's meeting membership, approved-policy, and published-event rules.
+-- SECURITY INVOKER ensures this function runs with the caller's table privileges
+-- and remains subject to embeddings RLS.
 DROP FUNCTION IF EXISTS public.hybrid_search(text, vector, integer);
 CREATE OR REPLACE FUNCTION public.hybrid_search(
   query_text text,
@@ -65,24 +68,3 @@ LIMIT (SELECT n FROM bounded);
 $$;
 
 GRANT EXECUTE ON FUNCTION public.hybrid_search(text, vector, integer) TO authenticated;
-
--- Events are visible to authenticated users under the existing events_read policy.
--- Permit their corresponding chunks to follow that same visibility rule.
-DROP POLICY IF EXISTS embeddings_read ON public.embeddings;
-CREATE POLICY embeddings_read ON public.embeddings
-FOR SELECT TO authenticated
-USING (
-  (parent_type = 'meeting' AND EXISTS (
-    SELECT 1 FROM public.meetings m
-    WHERE m.id = parent_id
-      AND (m.status = 'Published' OR m.created_by = (SELECT auth.uid())
-           OR m.assigned_approver_id = (SELECT auth.uid()) OR public.is_staff())
-  ))
-  OR (parent_type = 'policy' AND EXISTS (
-    SELECT 1 FROM public.policies p
-    WHERE p.id = parent_id AND (p.status = 'Approved' OR public.is_staff())
-  ))
-  OR (parent_type = 'event' AND EXISTS (
-    SELECT 1 FROM public.events ev WHERE ev.id = parent_id
-  ))
-);

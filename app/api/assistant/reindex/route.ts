@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json().catch(() => ({}));
-    const type = ["meeting", "policy", "event"].includes(body.type) ? body.type : "all";
+    const type = ["meeting", "policy", "event"].includes(body.type) ? body.type : "meeting";
     const limit = Math.max(1, Math.min(Number(body.limit) || 10, 20));
     const offset = Math.max(0, Number(body.offset) || 0);
     const admin = createAdminClient();

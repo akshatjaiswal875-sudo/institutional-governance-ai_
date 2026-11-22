@@ -1,33 +1,42 @@
-# Local Whisper Worker
+# Whisper transcription worker
 
-This worker provides local transcription for meeting recordings. The resulting transcript is sent server-side to Hugging Face for meeting intelligence analysis.
+This service runs `faster-whisper` outside Vercel and exposes an authenticated HTTP transcription endpoint.
 
-## Requirements
+## Deploy on Render
 
-- Python 3.10+
-- pip
-- ffmpeg (required for video files and recommended for audio extraction)
-- `faster-whisper`
+Create a Docker web service from this repository with:
 
-## Windows setup
+- Dockerfile path: `ai/whisper/Dockerfile`
+- Docker context: repository root (`.`)
+- Health check path: `/health`
+- Region: Singapore (closest available region for India)
+- Plan: at least 1 CPU / 2 GB RAM is recommended for the `small` model. Free instances may sleep and are not recommended for production latency.
 
-1. Install Python 3.10+.
-2. Open a terminal in the project root.
-3. Create a virtual environment:
-   `python -m venv .venv`
-4. Activate it:
-   `.\\.venv\\Scripts\\activate`
-5. Install requirements:
-   `python -m pip install --upgrade pip`
-   `python -m pip install -r ai/whisper/requirements.txt`
-6. Install ffmpeg and ensure it is available on PATH.
-7. Run the worker:
-   `python ai/whisper/transcribe.py "C:/path/to/meeting.mp3" --model small`
+Set these worker environment variables:
 
-## Notes
+- `WHISPER_WORKER_TOKEN`: a long random secret shared only with the Next.js production app.
+- `WHISPER_MODEL`: `small` (default; use `base` for lower memory/latency).
+- `WHISPER_DEVICE`: `cpu`
+- `WHISPER_COMPUTE_TYPE`: `int8`
 
-- Default Whisper model: small
-- Supported inputs: mp3, wav, m4a, aac, ogg and common video containers when ffmpeg is available.
-- Audio is transcribed locally by faster-whisper and is not sent to a hosted transcription provider.
-- The Next.js server invokes this worker; temporary files are written under the runtime OS temp directory and cleaned after processing.
-- The worker must run in a Python-capable environment. Vercel serverless functions do not provide a reliable persistent Python/faster-whisper runtime, so production deployments should run the Whisper worker on a separate Python worker/container while keeping this same Local Whisper implementation.
+The worker exposes `POST /transcribe` with multipart field `file` and header `Authorization: Bearer <token>`. It returns JSON `{"transcript":"..."}`. The unauthenticated `GET /health` endpoint is intended for service health checks.
+
+## Configure the Next.js app
+
+Set these Vercel Production environment variables:
+
+- `WHISPER_WORKER_URL`: the worker URL ending in `/transcribe`.
+- `WHISPER_WORKER_TOKEN`: the same token configured on Render.
+- `WHISPER_MODEL`: `small` (must match the worker model selection).
+
+When `WHISPER_WORKER_URL` is configured, the app uses this worker before considering Hugging Face. The Hugging Face inference key is no longer needed for transcription.
+
+## Local development
+
+Install `ai/whisper/requirements.txt`, install ffmpeg, then run:
+
+```bash
+WHISPER_WORKER_TOKEN=replace-me uvicorn service:app --app-dir ai/whisper --host 127.0.0.1 --port 8000
+```
+
+Audio and temporary video files are removed after processing. The worker never stores uploaded recordings.

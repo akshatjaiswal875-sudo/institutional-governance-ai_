@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { requireUser } from '@/lib/auth';
-import { answerMeetingQuestion } from '@/lib/ai/pipeline';
+import { answerMeetingQuestion, embed } from '@/lib/ai/pipeline';
 import { fail, ok } from '@/lib/response';
 
 const schema = z.object({ message: z.string().trim().min(1).max(4000) });
@@ -137,18 +137,42 @@ export async function POST(req: NextRequest) {
     const sourceKeys = new Set<string>();
     const sources: AssistantSource[] = [];
 
-    try {
-      const { data, error } = await supabase.rpc('keyword_search', { query_text: body.message, match_count: 12 });
-      if (!error) {
-        for (const row of (data ?? []) as SearchRow[]) {
-          rows.push(row);
-          addSource(sources, sourceKeys, row.parent_type, row.parent_id, row.metadata);
-        }
-      } else {
-        console.warn('[assistant] keyword_search unavailable; using direct retrieval:', error.message);
+    // Run lexical retrieval for exact terminology and identifiers. If embeddings are
+    // configured, run vector + lexical retrieval over indexed chunks in parallel.
+    // RRF ranking is performed inside hybrid_search so raw cosine and ts_rank
+    // scores are never compared directly.
+    const lexicalPromise = supabase.rpc('keyword_search', { query_text: body.message, match_count: 20 });
+    const semanticPromise = (async () => {
+      if (process.env.ENABLE_OPENAI_EMBEDDINGS !== 'true' || !process.env.OPENAI_API_KEY?.trim()) return { data: [], error: null };
+      try {
+        const queryVector = await embed(body.message);
+        return await supabase.rpc('hybrid_search', {
+          query_text: body.message,
+          query_embedding: queryVector,
+          match_count: 20,
+        });
+      } catch (error) {
+        console.warn('[assistant] semantic retrieval unavailable; continuing with lexical search:', error instanceof Error ? error.message : error);
+        return { data: [], error: null };
       }
-    } catch (error) {
-      console.warn('[assistant] keyword_search failed; using direct retrieval:', error);
+    })();
+
+    const [lexicalResult, hybridResult] = await Promise.all([lexicalPromise, semanticPromise]);
+    if (lexicalResult.error) {
+      console.warn('[assistant] keyword_search unavailable; using direct retrieval:', lexicalResult.error.message);
+    } else {
+      for (const row of (lexicalResult.data ?? []) as SearchRow[]) {
+        rows.push(row);
+        addSource(sources, sourceKeys, row.parent_type, row.parent_id, row.metadata);
+      }
+    }
+    if (hybridResult.error) {
+      console.warn('[assistant] hybrid_search unavailable; retaining lexical results:', hybridResult.error.message);
+    } else {
+      for (const row of (hybridResult.data ?? []) as SearchRow[]) {
+        rows.push(row);
+        addSource(sources, sourceKeys, row.parent_type, row.parent_id, row.metadata);
+      }
     }
 
     const contextParts: string[] = rows.map(readableSearchChunk).filter(Boolean);

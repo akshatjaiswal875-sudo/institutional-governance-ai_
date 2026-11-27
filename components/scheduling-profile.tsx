@@ -84,7 +84,7 @@ export function SchedulingProfile() {
     </header>
 
     <section className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-bold">Weekly availability</h2><p className="mt-1 text-sm text-slate-600">Add the time windows when you are normally available. No schedule is assumed until you save it.</p></div><button onClick={() => addAvailability()} className="inline-flex items-center gap-2 rounded-xl border border-blue-200 px-3 py-2 text-sm text-blue-700 hover:bg-slate-100"><Plus size={15}/> Add time window</button></div>
+      <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-bold">Weekly availability</h2><p className="mt-1 text-sm text-slate-600">Add your normal meeting windows. Until you configure a day, the scheduler uses Monday–Friday, 9 AM–5 PM in your timezone; uploaded classes, meetings and leave still block those periods.</p></div><button onClick={() => addAvailability()} className="inline-flex items-center gap-2 rounded-xl border border-blue-200 px-3 py-2 text-sm text-blue-700 hover:bg-slate-100"><Plus size={15}/> Add time window</button></div>
       <div className="mt-5 space-y-3">
         {availability.length === 0 && <div className="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">No weekly availability added yet. Add your regular working hours or use the weekday preset below.</div>}
         {availability.map((row, index) => <div key={index} className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-[1.1fr_1fr_1fr_auto_auto] sm:items-center">

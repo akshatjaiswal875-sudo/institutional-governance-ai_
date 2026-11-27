@@ -92,7 +92,7 @@ export function FancyDashboard() {
         ? Date.parse(event.end_time)
         : status === "ongoing" ? Number.POSITIVE_INFINITY : startTime;
 
-      return Number.isFinite(endTime) ? endTime >= now : status === "ongoing";
+      return Number.isFinite(endTime) ? endTime > now : status === "ongoing";
     })
     .sort((a, b) => Date.parse(a.start_time) - Date.parse(b.start_time))
     .slice(0, 4), [events, now]);

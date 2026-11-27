@@ -45,7 +45,7 @@ function createTransporter() {
 }
 
 function getSiteUrl() {
-  return (process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || "https://institutional-governance-ai.onrender.com").replace(/\/$/, "");
+  return (process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "https://institutional-governance-ai.vercel.app").replace(/\/$/, "");
 }
 
 export async function sendMeetingInvitation(invitation: MeetingInvitation): Promise<void> {

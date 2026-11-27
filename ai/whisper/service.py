@@ -61,9 +61,13 @@ def run_transcription(job_id: str, source_path: str, temp_dir: str):
         with _jobs_lock:
             _jobs[job_id].update({"status": "failed", "error": "Transcription exceeded the worker time limit.", "finished_at": time.time()})
     except subprocess.CalledProcessError as exc:
-        detail = (exc.stderr or b"").decode("utf-8", errors="replace") if isinstance(exc.stderr, bytes) else str(exc.stderr or "")
+        command = Path(str(exc.cmd[0])).name if isinstance(exc.cmd, (list, tuple)) and exc.cmd else "unknown command"
+        raw_detail = exc.stderr or exc.stdout or b""
+        detail = raw_detail.decode("utf-8", errors="replace") if isinstance(raw_detail, bytes) else str(raw_detail)
+        detail = detail.strip() or f"{command} exited with status {exc.returncode} without diagnostic output."
+        print(f"[whisper-worker] job={job_id} command={command} exit={exc.returncode}: {detail[-1500:]}", flush=True)
         with _jobs_lock:
-            _jobs[job_id].update({"status": "failed", "error": detail[-1500:] or "Whisper command failed.", "finished_at": time.time()})
+            _jobs[job_id].update({"status": "failed", "error": f"{command}: {detail[-1200:]}", "finished_at": time.time()})
     except Exception as exc:
         with _jobs_lock:
             _jobs[job_id].update({"status": "failed", "error": str(exc)[:1500], "finished_at": time.time()})

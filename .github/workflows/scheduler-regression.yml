@@ -7,6 +7,7 @@ on:
     branches:
       - main
       - fix/scheduler-ci-and-conflicts
+      - fix/super-admin-user-list
   workflow_dispatch:
 
 permissions:

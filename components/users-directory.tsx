@@ -34,7 +34,10 @@ export function UsersDirectory() {
   useEffect(() => {
     let active = true;
 
-    fetch("/api/users", { headers: { "Content-Type": "application/json" } })
+    fetch("/api/users", {
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+    })
       .then(async (response) => {
         const result = await response.json();
         if (!response.ok) throw new Error(result.error ?? "Unable to load users.");

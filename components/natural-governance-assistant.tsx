@@ -65,6 +65,7 @@ function formatSlot(start: string, end: string) {
 
 export function NaturalGovernanceAssistant() {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [activeResult, setActiveResult] = useState<Message | null>(null);
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [findingBestTime, setFindingBestTime] = useState(false);
@@ -97,8 +98,11 @@ export function NaturalGovernanceAssistant() {
   async function ask(text: string) {
     const message = text.trim(); if (!message || busy) return;
     setBusy(true); setError(""); setQuery(""); setMessages(prev => [...prev, { role: "user", content: message }]);
-    try { const result = await api<any>("/api/assistant", { method: "POST", body: JSON.stringify({ message }) }); setMessages(prev => [...prev, { role: "assistant", content: result.answer ?? "I couldn't find a useful answer.", sources: Array.isArray(result.sources) ? result.sources : [], aiAvailable: result.aiAvailable !== false }]); }
-    catch (e) { setError(e instanceof Error ? e.message : "Assistant failed."); }
+    try {
+      const result = await api<any>("/api/assistant", { method: "POST", body: JSON.stringify({ message }) });
+      const assistantMessage: Message = { role: "assistant", content: result.answer ?? "I could not find a useful answer.", sources: Array.isArray(result.sources) ? result.sources : [], aiAvailable: result.aiAvailable !== false };
+      setMessages(prev => [...prev, assistantMessage]); setActiveResult(assistantMessage);
+    } catch (e) { setError(e instanceof Error ? e.message : "Assistant failed."); }
     finally { setBusy(false); }
   }
 
@@ -156,7 +160,8 @@ export function NaturalGovernanceAssistant() {
     try {
       const result = await api<any>("/api/assistant/meeting-action", { method: "POST", body: JSON.stringify({ action: "confirm", draft, participantIds: selected }) });
       const invitationText = result.invitationErrors?.length ? ` ${result.invitationErrors.length} invitation(s) need attention.` : ` Invitations were sent to ${result.participants.length} participant(s).`;
-      setMessages(prev => [...prev, { role: "assistant", content: `Meeting created successfully: ${result.meeting.title}.${invitationText}` }]);
+      const createdMessage: Message = { role: "assistant", content: `Meeting created successfully: ${result.meeting.title}.${invitationText}` };
+      setMessages(prev => [...prev, createdMessage]); setActiveResult(createdMessage);
       setDraft(null); setParticipants([]); setSelected([]); setBestTimeResult(null); setError("");
     } catch (e) { setError(e instanceof Error ? e.message : "Unable to create meeting."); }
     finally { setBusy(false); }
@@ -176,7 +181,7 @@ export function NaturalGovernanceAssistant() {
         </div>
       </div>
     </section>
-    <div className="grid gap-6 lg:grid-cols-[1fr_330px]">
+    <div className="grid items-start gap-6 lg:grid-cols-2">
       <section className="card flex min-h-[560px] flex-col p-5">
         <div className="flex-1 space-y-4 overflow-auto pr-1">
           {!messages.length && <div className="py-16 text-center"><Sparkles className="mx-auto mb-4" size={34}/><h2 className="text-xl font-semibold">How can I help?</h2><p className="mx-auto mt-2 max-w-lg text-slate-400">Ask in normal language. You don't need exact commands or database terms.</p><div className="mt-6 flex flex-wrap justify-center gap-2">{suggestions.map(s => <button key={s} onClick={() => void ask(s)} className="btn btn-secondary text-sm">{s}</button>)}</div></div>}

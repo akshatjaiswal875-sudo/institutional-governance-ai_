@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { GoogleGenAI } from "@google/genai";
-import { isParticipantAvailable, localWindow } from "@/lib/calendar/scheduler";
+import { participantAvailabilityFailure, localWindow } from "@/lib/calendar/scheduler";
 
 const SEARCH_DAYS = 7;
 const SLOT_STEP_MINUTES = 30;
@@ -97,9 +97,12 @@ export async function POST(request: Request) {
       }
     }
     const activeParticipantLinks = (participantLinks ?? []).filter(link => String(link.attendance_status ?? "").toLowerCase() !== "declined");
-    const matchesUser = (row: TimetableRow, user: UserRow) =>
-      (row.faculty_email && user.email.toLowerCase() === String(row.faculty_email).toLowerCase()) ||
-      (row.department && user.department?.toLowerCase() === String(row.department).toLowerCase());
+    // A faculty-specific timetable must never block every person in that department.
+    // Department matching is used only for genuinely department-wide rows.
+    const matchesUser = (row: TimetableRow, user: UserRow) => {
+      if (row.faculty_email) return user.email.toLowerCase() === String(row.faculty_email).trim().toLowerCase();
+      return Boolean(row.department && user.department?.toLowerCase() === String(row.department).trim().toLowerCase());
+    };
     const datedTimetableBusy: BusyItem[] = ((timetableRows ?? []) as TimetableRow[]).flatMap(row => {
       if (!row.starts_at || !row.ends_at) return [];
       const start = new Date(row.starts_at).getTime(); const end = new Date(row.ends_at).getTime();
@@ -135,6 +138,7 @@ export async function POST(request: Request) {
     for (const row of (exceptions ?? []) as UnavailabilityRow[]) { const list = exceptionsByUser.get(row.user_id) ?? []; list.push(row); exceptionsByUser.set(row.user_id, list); }
     for (const row of availability ?? []) { const list = availabilityByUser.get(row.user_id) ?? []; list.push(row); availabilityByUser.set(row.user_id, list); }
     const candidates: Candidate[] = [];
+    const rejectionCounts: Record<string, number> = {};
     const nowEpoch = Date.now();
     for (let dayIndex = 0; dayIndex < searchDays; dayIndex += 1) {
       const dateString = addDays(startDate, dayIndex); const weekday = weekdayOneToSeven(dateString);
@@ -145,11 +149,15 @@ export async function POST(request: Request) {
           const preference = effectivePreferences.get(user.id)!;
           const userAvailability = availabilityByUser.get(user.id) ?? [];
           const userBusy = busy.filter(item => item.user_id === user.id);
-          const isAvailable = isParticipantAvailable({
+          const failure = participantAvailabilityFailure({
             startEpoch, endEpoch, availability: userAvailability, preference,
             busy: userBusy, exceptions: exceptionsByUser.get(user.id) ?? [],
           });
-          if (isAvailable) availableCount += 1; else allAvailable = false;
+          if (failure === null) availableCount += 1;
+          else {
+            allAvailable = false;
+            rejectionCounts[failure] = (rejectionCounts[failure] ?? 0) + 1;
+          }
         }
         if (!allAvailable) continue;
         const base = { start: start.toISOString(), end: end.toISOString(), startEpoch, endEpoch, availableCount, participantCount: users.length }; const score = scoreCandidate(base, busy.filter(item => users.some(user => user.id === item.user_id))); candidates.push({ ...base, score, reason: "All selected participants are available during this slot." });
@@ -158,7 +166,7 @@ export async function POST(request: Request) {
     const ranked = await rankWithAI(candidates, users);
     const sorted = ranked.candidates.slice(0, 10);
     const [recommended, ...alternatives] = sorted;
-    return NextResponse.json({ data: { recommended: recommended ?? null, alternatives, provider: ranked.provider, searchedFrom: startDate, searchedUntil: endDate, searchWindow, durationMinutes: effectiveDuration, participantCount: users.length, participants: users.map(user => ({ id: user.id, email: user.email, role: user.role, department: user.department })) } });
+    return NextResponse.json({ data: { recommended: recommended ?? null, alternatives, provider: ranked.provider, searchedFrom: startDate, searchedUntil: endDate, searchWindow, durationMinutes: effectiveDuration, participantCount: users.length, participants: users.map(user => ({ id: user.id, email: user.email, role: user.role, department: user.department })), diagnostics: { candidateSlotsEvaluated: Object.values(rejectionCounts).reduce((sum, count) => sum + count, 0) / Math.max(1, users.length), rejectionCounts } } });
   } catch (error) {
     console.error("find-best-time error", error);
     return NextResponse.json({ error: "Unable to calculate meeting availability." }, { status: 500 });

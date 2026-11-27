@@ -11,7 +11,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
     const { data: meeting, error: meetingError } = await supabase.from("meetings").select("id,created_by").eq("id", params.id).maybeSingle();
     if (meetingError) throw meetingError;
     if (!meeting) return NextResponse.json({ error: "Meeting not found." }, { status: 404 });
-    if (meeting.created_by !== profile.id && profile.role !== "Super Admin") return NextResponse.json({ error: "Only the meeting organizer can view assignment options." }, { status: 403 });
+    if (meeting.created_by !== profile.id && profile.role !== "Super Admin") return NextResponse.json({ data: { users: [], departments: [], currentRole: profile.role, currentUserId: profile.id, currentDepartment: profile.department } });
 
     const admin = createAdminClient();
     const { data: directory, error: directoryError } = await admin.from("users").select("department").not("department", "is", null);

@@ -41,7 +41,8 @@ export function MeetingDetailView() {
         api<MeetingRecord>(`/api/meetings/${params.id}`),
         api<{ users: ParticipantOption[]; departments: string[]; currentRole: string; currentUserId: string; currentDepartment: string | null }>(`/api/meetings/${params.id}/participants`),
       ]);
-      const approverData = userData.currentDepartment
+      const canLoadApprovers = meetingData.meeting?.created_by === userData.currentUserId || userData.currentRole === "Super Admin";
+      const approverData = canLoadApprovers && userData.currentDepartment
         ? await api<{ users: ParticipantOption[] }>(`/api/meetings/${params.id}/participants?role=Faculty%20%2F%20Officer&department=${encodeURIComponent(userData.currentDepartment)}`)
         : { users: [] };
       setRecord(meetingData); setOptions(approverData.users); setDepartments(userData.departments ?? []); setCurrentRole(userData.currentRole); setCurrentUserId(userData.currentUserId); setError("");

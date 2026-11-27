@@ -4,6 +4,7 @@ import { recordAudit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const ASSIGNABLE_ROLES = ["HOD", "Faculty / Officer", "Director", "Principal", "Super Admin", "Meeting Secretary", "Coordinators", "Coordinator"] as const;
+type AssignableRole = (typeof ASSIGNABLE_ROLES)[number];
 
 export async function GET(request: Request, { params }: { params: { id: string } }) {
   try {
@@ -21,7 +22,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
     const url = new URL(request.url);
     const department = url.searchParams.get("department")?.trim() ?? "";
     const requestedRole = url.searchParams.get("role")?.trim() ?? "";
-    const role = (ASSIGNABLE_ROLES as readonly string[]).includes(requestedRole) ? requestedRole : "";
+    const role: AssignableRole | undefined = ASSIGNABLE_ROLES.find(item => item === requestedRole);
     let users: Array<{ id: string; email: string; role: string; department: string | null }> = [];
     const needsDepartment = role === "HOD" || role === "Faculty / Officer" || role === "Faculty";
     if (role && (!needsDepartment || department)) {
@@ -45,19 +46,19 @@ export async function POST(request: Request, { params }: { params: { id: string 
     const { supabase, profile } = await requireUser();
     const body = await request.json();
     const userId = typeof body.userId === "string" ? body.userId.trim() : "";
-    const requestedRole = typeof body.role === "string" ? body.role.trim() : "";
+    const requestedRole: AssignableRole | undefined = ASSIGNABLE_ROLES.find(item => item === (typeof body.role === "string" ? body.role.trim() : ""));
     const department = typeof body.department === "string" ? body.department.trim() : "";
     const attendanceStatus = typeof body.attendanceStatus === "string" && body.attendanceStatus.trim() ? body.attendanceStatus.trim() : "Invited";
     if (!userId || !requestedRole) return NextResponse.json({ error: "Participant and role are required." }, { status: 400 });
     const needsDepartment = requestedRole === "HOD" || requestedRole === "Faculty / Officer";
-    if (!(ASSIGNABLE_ROLES as readonly string[]).includes(requestedRole) || (needsDepartment && !department)) return NextResponse.json({ error: "Choose a valid role and department." }, { status: 400 });
+    if (needsDepartment && !department) return NextResponse.json({ error: "Choose a valid role and department." }, { status: 400 });
     const { data: meeting } = await supabase.from("meetings").select("id,created_by").eq("id", params.id).maybeSingle();
     if (!meeting) return NextResponse.json({ error: "Meeting not found." }, { status: 404 });
     if (meeting.created_by !== profile.id && profile.role !== "Super Admin") return NextResponse.json({ error: "Only the meeting organizer can add participants." }, { status: 403 });
     const admin = createAdminClient();
     const { data: user, error: userError } = await admin.from("users").select("id,email,role,department").eq("id", userId).maybeSingle();
     if (userError) throw userError;
-    if (!user || user.role !== requestedRole || !(ASSIGNABLE_ROLES as readonly string[]).includes(user.role) || (needsDepartment && user.department !== department)) return NextResponse.json({ error: "Selected account does not match the requested role and department." }, { status: 400 });
+    if (!user || user.role !== requestedRole || (needsDepartment && user.department !== department)) return NextResponse.json({ error: "Selected account does not match the requested role and department." }, { status: 400 });
     const { data: existing, error: existingError } = await admin.from("participants").select("id").eq("meeting_id", params.id).eq("user_id", userId).maybeSingle();
     if (existingError) throw existingError;
     if (existing) return NextResponse.json({ error: "That participant is already added." }, { status: 409 });

@@ -1,6 +1,6 @@
 # Whisper transcription worker
 
-This service runs `faster-whisper` outside Vercel and exposes an authenticated HTTP transcription endpoint.
+This optional service runs `faster-whisper` outside Vercel and exposes an authenticated HTTP transcription endpoint. For a no-extra-hosting-cost setup, the Next.js app can use Groq's hosted Whisper API first.
 
 ## Deploy on Render
 
@@ -21,7 +21,7 @@ Set these worker environment variables:
 
 The worker exposes `POST /transcribe` with multipart field `file` and header `Authorization: Bearer <token>`. It returns JSON `{"transcript":"..."}`. The unauthenticated `GET /health` endpoint is intended for service health checks.
 
-## Configure the Next.js app
+## Free hosted transcription with Groq (recommended for small production workloads)\n\n1. Create an API key at https://console.groq.com/keys.\n2. Add `GROQ_API_KEY` to the Vercel Production environment variables.\n3. Optionally set `GROQ_WHISPER_MODEL=whisper-large-v3-turbo` (the default).\n\nThe application checks providers in this order: configured self-hosted worker, Groq, Hugging Face, then local Whisper. Groq's free-tier direct upload limit is 25 MB per file. The free tier is rate-limited and is not an unlimited or guaranteed-capacity production service; users may need to retry after a rate-limit response. Recordings larger than 25 MB currently return a clear size-limit error and must be compressed or split before upload.\n\n## Configure the Next.js app
 
 Set these Vercel Production environment variables:
 
@@ -29,7 +29,7 @@ Set these Vercel Production environment variables:
 - `WHISPER_WORKER_TOKEN`: the same token configured on Render.
 - `WHISPER_MODEL`: `small` (must match the worker model selection).
 
-When `WHISPER_WORKER_URL` is configured, the app uses this worker before considering Hugging Face. The Hugging Face inference key is no longer needed for transcription.
+When `WHISPER_WORKER_URL` is configured, the app uses this worker before Groq and Hugging Face. If no worker is configured, `GROQ_API_KEY` enables hosted Groq Whisper transcription. Hugging Face is used only when neither worker nor Groq is configured.
 
 ## Local development
 

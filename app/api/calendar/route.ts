@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
     }
     for (const row of datedTimetableResult.data ?? []) items.push({
       id: `timetable:${row.id}`, sourceId: row.id, kind: "timetable", title: row.title || "Class",
-      start: row.starts_at, end: row.ends_at, location: row.room, status: "Scheduled", href: null,
+      start: row.starts_at, end: row.ends_at, location: row.room, status: "Scheduled", href: null, recurring: false,
     });
 
     const firstDay = dateKey(new Date(from));
@@ -78,7 +78,7 @@ export async function GET(request: NextRequest) {
         if (weekday(cursor) === row.weekday) items.push({
           id: `timetable:${row.id}:${cursor}`, sourceId: row.id, kind: "timetable", title: row.title || "Class",
           start: atTime(cursor, row.start_time), end: atTime(cursor, row.end_time), location: row.room,
-          status: "Scheduled", href: null, recurring: true,
+          status: "Scheduled", href: null, recurring: true, weekday: row.weekday, startTime: row.start_time, endTime: row.end_time,
         });
         const next = new Date(`${cursor}T12:00:00${IST}`);
         next.setUTCDate(next.getUTCDate() + 1);

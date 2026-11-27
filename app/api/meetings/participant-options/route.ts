@@ -6,7 +6,7 @@ export async function GET() {
   try {
     // Match the database can_manage_meetings() policy. Only governance
     // meeting managers may enumerate users for the participant picker.
-    const { profile } = await requireUser([
+    await requireUser([
       "Director",
       "Principal",
       "HOD",

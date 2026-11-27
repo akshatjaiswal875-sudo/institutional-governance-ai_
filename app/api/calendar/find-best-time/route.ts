@@ -142,6 +142,7 @@ export async function POST(request: Request) {
     for (const row of availability ?? []) { const list = availabilityByUser.get(row.user_id) ?? []; list.push(row); availabilityByUser.set(row.user_id, list); }
     const candidates: Candidate[] = [];
     const rejectionCounts: Record<string, number> = {};
+    const participantRejections = new Map<string, Record<string, number>>();
     let candidateSlotsEvaluated = 0;
     const nowEpoch = Date.now();
     for (let dayIndex = 0; dayIndex < searchDays; dayIndex += 1) {
@@ -162,6 +163,9 @@ export async function POST(request: Request) {
           else {
             allAvailable = false;
             rejectionCounts[failure] = (rejectionCounts[failure] ?? 0) + 1;
+            const userReasons = participantRejections.get(user.id) ?? {};
+            userReasons[failure] = (userReasons[failure] ?? 0) + 1;
+            participantRejections.set(user.id, userReasons);
           }
         }
         if (!allAvailable) continue;
@@ -171,7 +175,7 @@ export async function POST(request: Request) {
     const ranked = await rankWithAI(candidates, users);
     const sorted = ranked.candidates.slice(0, 10);
     const [recommended, ...alternatives] = sorted;
-    return NextResponse.json({ data: { recommended: recommended ?? null, alternatives, provider: ranked.provider, searchedFrom: startDate, searchedUntil: endDate, searchWindow, durationMinutes: effectiveDuration, participantCount: users.length, participants: users.map(user => ({ id: user.id, email: user.email, role: user.role, department: user.department })), diagnostics: { candidateSlotsEvaluated, rejectionCounts } } });
+    return NextResponse.json({ data: { recommended: recommended ?? null, alternatives, provider: ranked.provider, searchedFrom: startDate, searchedUntil: endDate, searchWindow, durationMinutes: effectiveDuration, participantCount: users.length, diagnosticsVersion: 2, participants: users.map(user => ({ id: user.id, email: user.email, role: user.role, department: user.department })), diagnostics: { candidateSlotsEvaluated, rejectionCounts, participants: users.map(user => ({ email: user.email, role: user.role, department: user.department, blockers: participantRejections.get(user.id) ?? {} })), timetableRowsMatched: timetableBusy.length, eventConflictsLoaded: (events ?? []).length, existingMeetingsLoaded: meetings.length, availabilityRowsLoaded: (availability ?? []).length, unavailabilityRowsLoaded: (exceptions ?? []).length, timezone: "Asia/Kolkata", candidateGrid: "06:00–22:00, 30-minute steps" } } });
   } catch (error) {
     console.error("find-best-time error", error);
     return NextResponse.json({ error: "Unable to calculate meeting availability." }, { status: 500 });

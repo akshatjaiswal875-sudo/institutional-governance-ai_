@@ -7,7 +7,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /build
 RUN git clone --depth 1 https://github.com/ggml-org/whisper.cpp.git
 WORKDIR /build/whisper.cpp
-RUN cmake -B build -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON -DWHISPER_BUILD_SERVER=OFF -DBUILD_SHARED_LIBS=OFF && \
+# Render Free instances may expose a restricted CPU instruction set. Build a
+# portable binary instead of using the build host's native SIMD instructions.
+RUN cmake -B build \
+    -DWHISPER_BUILD_TESTS=OFF \
+    -DWHISPER_BUILD_EXAMPLES=ON \
+    -DWHISPER_BUILD_SERVER=OFF \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DGGML_NATIVE=OFF \
+    -DGGML_AVX=OFF \
+    -DGGML_AVX2=OFF \
+    -DGGML_AVX512=OFF \
+    -DGGML_FMA=OFF \
+    -DGGML_F16C=OFF && \
     cmake --build build --config Release -j2
 
 RUN mkdir -p /models && \

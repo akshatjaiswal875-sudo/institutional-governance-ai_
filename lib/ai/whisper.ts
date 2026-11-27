@@ -8,7 +8,7 @@ type WhisperJob = {
 function workerUrl(path: string) {
   const configured = process.env.WHISPER_WORKER_URL?.trim();
   if (!configured) throw new Error("Whisper worker is not configured. Set WHISPER_WORKER_URL in Vercel.");
-  const base = configured.replace(/\\/transcribe\\/?$/, "").replace(/\\/$/, "");
+  const base = configured.replace(/\/transcribe\/?$/, "").replace(/\/$/, "");
   return `${base}${path}`;
 }
 

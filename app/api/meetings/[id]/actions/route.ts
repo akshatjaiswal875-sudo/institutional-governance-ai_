@@ -25,13 +25,15 @@ export async function POST(request: Request, { params }: { params: { id: string 
     if (!meeting) return NextResponse.json({ error: "Meeting not found." }, { status: 404 });
     if (!canManageMeeting({ userId: profile.id, creatorId: meeting.created_by, role: profile.role })) return NextResponse.json({ error: "Only the meeting organizer can assign tasks for this meeting." }, { status: 403 });
 
-    const departmentRole = (DEPARTMENT_ROLES as readonly string[]).includes(requestedRole);
-    const institutionalRole = (INSTITUTIONAL_ROLES as readonly string[]).includes(requestedRole);
+    const departmentRole = DEPARTMENT_ROLES.some(role => role === requestedRole);
+    const institutionalRole = INSTITUTIONAL_ROLES.some(role => role === requestedRole);
+    type AssigneeRole = (typeof DEPARTMENT_ROLES)[number] | (typeof INSTITUTIONAL_ROLES)[number];
+    const assigneeRole = requestedRole as AssigneeRole;
     if (!departmentRole && !institutionalRole) return NextResponse.json({ error: "Invalid assignee role." }, { status: 400 });
     if (departmentRole && !department) return NextResponse.json({ error: "Select a department for HOD or faculty assignment." }, { status: 400 });
 
     const admin = createAdminClient();
-    let assigneeQuery = admin.from("users").select("id,email,role,department").eq("id", assigneeId).eq("role", requestedRole);
+    let assigneeQuery = admin.from("users").select("id,email,role,department").eq("id", assigneeId).eq("role", assigneeRole);
     if (departmentRole) assigneeQuery = assigneeQuery.eq("department", department);
     const { data: assignee, error: assigneeError } = await assigneeQuery.maybeSingle();
     if (assigneeError) throw assigneeError;

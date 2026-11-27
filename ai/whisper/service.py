@@ -4,29 +4,20 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import time
+import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from fastapi import FastAPI, File, Header, HTTPException, UploadFile
-from faster_whisper import WhisperModel
 
-app = FastAPI(title="Institutional Governance Whisper Worker", version="1.0.0")
-_model = None
-_model_lock = threading.Lock()
-MAX_UPLOAD_BYTES = int(os.getenv("WHISPER_MAX_UPLOAD_BYTES", str(200 * 1024 * 1024)))
-
-
-def get_model():
-    global _model
-    if _model is None:
-        with _model_lock:
-            if _model is None:
-                model_name = os.getenv("WHISPER_MODEL", "small")
-                _model = WhisperModel(
-                    model_name,
-                    device=os.getenv("WHISPER_DEVICE", "cpu"),
-                    compute_type=os.getenv("WHISPER_COMPUTE_TYPE", "int8"),
-                )
-    return _model
+app = FastAPI(title="Institutional Governance Whisper Worker", version="2.0.0")
+MODEL_PATH = os.getenv("WHISPER_MODEL_PATH", "/models/ggml-tiny-q5_1.bin")
+WHISPER_CLI = os.getenv("WHISPER_CLI", "/usr/local/bin/whisper-cli")
+MAX_UPLOAD_BYTES = int(os.getenv("WHISPER_MAX_UPLOAD_BYTES", str(100 * 1024 * 1024)))
+_jobs: dict[str, dict] = {}
+_jobs_lock = threading.Lock()
+_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="whisper")
 
 
 def verify_token(authorization: str | None):
@@ -38,12 +29,54 @@ def verify_token(authorization: str | None):
         raise HTTPException(status_code=401, detail="Invalid worker token.")
 
 
+def prune_jobs():
+    cutoff = time.time() - 4 * 60 * 60
+    with _jobs_lock:
+        for job_id in [key for key, value in _jobs.items() if value.get("created_at", 0) < cutoff]:
+            _jobs.pop(job_id, None)
+
+
+def run_transcription(job_id: str, source_path: str, temp_dir: str):
+    try:
+        with _jobs_lock:
+            _jobs[job_id]["status"] = "running"
+        source = Path(source_path)
+        audio_path = Path(temp_dir) / "audio.wav"
+        output_prefix = Path(temp_dir) / "transcript"
+        subprocess.run(
+            ["ffmpeg", "-nostdin", "-y", "-i", str(source), "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", str(audio_path)],
+            check=True, capture_output=True, timeout=600,
+        )
+        result = subprocess.run(
+            [WHISPER_CLI, "-m", MODEL_PATH, "-f", str(audio_path), "-nt", "-np", "-otxt", "-of", str(output_prefix)],
+            check=True, capture_output=True, text=True, timeout=3 * 60 * 60,
+        )
+        transcript_file = Path(f"{output_prefix}.txt")
+        transcript = transcript_file.read_text(encoding="utf-8", errors="replace").strip() if transcript_file.exists() else result.stdout.strip()
+        if not transcript:
+            raise RuntimeError("No speech was detected in this recording.")
+        with _jobs_lock:
+            _jobs[job_id].update({"status": "completed", "transcript": transcript, "finished_at": time.time()})
+    except subprocess.TimeoutExpired:
+        with _jobs_lock:
+            _jobs[job_id].update({"status": "failed", "error": "Transcription exceeded the worker time limit.", "finished_at": time.time()})
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or b"").decode("utf-8", errors="replace") if isinstance(exc.stderr, bytes) else str(exc.stderr or "")
+        with _jobs_lock:
+            _jobs[job_id].update({"status": "failed", "error": detail[-1500:] or "Whisper command failed.", "finished_at": time.time()})
+    except Exception as exc:
+        with _jobs_lock:
+            _jobs[job_id].update({"status": "failed", "error": str(exc)[:1500], "finished_at": time.time()})
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "whisper-worker"}
+    return {"status": "ok", "service": "whisper.cpp-worker", "model": "tiny-q5_1"}
 
 
-@app.post("/transcribe")
+@app.post("/transcribe", status_code=202)
 async def transcribe(file: UploadFile = File(...), authorization: str | None = Header(default=None)):
     verify_token(authorization)
     filename = Path(file.filename or "recording.bin").name
@@ -51,45 +84,41 @@ async def transcribe(file: UploadFile = File(...), authorization: str | None = H
     allowed = {".mp3", ".wav", ".m4a", ".aac", ".ogg", ".mp4", ".mov", ".mkv", ".webm", ".mpeg", ".mpga"}
     if suffix not in allowed:
         raise HTTPException(status_code=415, detail="Unsupported audio/video format.")
+    prune_jobs()
+    temp_dir = tempfile.mkdtemp(prefix="governance-whisper-")
+    source_path = str(Path(temp_dir) / filename)
+    total = 0
+    try:
+        with open(source_path, "wb") as target:
+            while chunk := await file.read(1024 * 1024):
+                total += len(chunk)
+                if total > MAX_UPLOAD_BYTES:
+                    raise HTTPException(status_code=413, detail="Recording exceeds the configured upload limit.")
+                target.write(chunk)
+        if total == 0:
+            raise HTTPException(status_code=400, detail="The uploaded recording is empty.")
+        job_id = str(uuid.uuid4())
+        with _jobs_lock:
+            _jobs[job_id] = {"status": "queued", "created_at": time.time()}
+        _executor.submit(run_transcription, job_id, source_path, temp_dir)
+        return {"job_id": job_id, "status": "queued"}
+    except Exception:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise
+    finally:
+        await file.close()
 
-    content = await file.read(MAX_UPLOAD_BYTES + 1)
-    if not content:
-        raise HTTPException(status_code=400, detail="The uploaded recording is empty.")
-    if len(content) > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="Recording exceeds the configured upload limit.")
 
-    with tempfile.TemporaryDirectory(prefix="governance-whisper-") as temp_dir:
-        source = Path(temp_dir) / filename
-        source.write_bytes(content)
-        audio_path = source
-        if suffix not in {".mp3", ".wav", ".m4a", ".aac", ".ogg", ".mpga"}:
-            audio_path = Path(temp_dir) / "audio.wav"
-            try:
-                subprocess.run(
-                    ["ffmpeg", "-y", "-i", str(source), "-vn", "-ac", "1", "-ar", "16000", str(audio_path)],
-                    check=True,
-                    capture_output=True,
-                    timeout=180,
-                )
-            except FileNotFoundError:
-                raise HTTPException(status_code=500, detail="ffmpeg is not installed on the worker.")
-            except subprocess.CalledProcessError as exc:
-                detail = exc.stderr.decode("utf-8", errors="replace")[-1000:]
-                raise HTTPException(status_code=422, detail=f"Could not extract audio: {detail}")
-
-        try:
-            segments, _ = get_model().transcribe(
-                str(audio_path),
-                vad_filter=True,
-                word_timestamps=False,
-                beam_size=5,
-            )
-            transcript = "\n".join(
-                segment.text.strip() for segment in segments if segment.text and segment.text.strip()
-            )
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"Whisper transcription failed: {exc}")
-
-    if not transcript.strip():
-        raise HTTPException(status_code=422, detail="No speech was detected in this recording.")
-    return {"transcript": transcript.strip()}
+@app.get("/jobs/{job_id}")
+def get_job(job_id: str, authorization: str | None = Header(default=None)):
+    verify_token(authorization)
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Transcription job not found. The worker may have restarted; retry processing.")
+        return {
+            "job_id": job_id,
+            "status": job["status"],
+            "transcript": job.get("transcript"),
+            "error": job.get("error"),
+        }

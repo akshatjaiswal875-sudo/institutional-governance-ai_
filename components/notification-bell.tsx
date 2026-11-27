@@ -5,7 +5,16 @@ import { useEffect, useState } from "react";
 import { Bell, CheckCheck, Clock3, ExternalLink, ListChecks, CalendarDays, FileText, Info } from "lucide-react";
 
 type Notification = { id: string; type: string; title: string; message: string; href?: string | null; read_at?: string | null; created_at: string };
-const iconFor = (type: string) => type === "meeting" || type === "event" ? CalendarDays : type === "task" || type === "action" ? ListChecks : type === "policy" ? FileText : Info;
+const iconFor = (type: string) =>
+  type === "meeting" || type === "meeting_approval" || type === "event"
+    ? CalendarDays
+    : type === "task" || type === "action" || type === "action_item_assigned"
+      ? ListChecks
+      : type === "policy" || type === "policy_created" || type === "policy_status_changed"
+        ? FileText
+        : type === "approval"
+          ? CheckCheck
+          : Info;
 function ago(value: string) {
   const minutes = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 60000));
   if (minutes < 1) return "Just now";

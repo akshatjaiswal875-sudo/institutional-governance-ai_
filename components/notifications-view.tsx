@@ -16,7 +16,7 @@ import {
 
 type Notification = {
   id: string;
-  type: "info" | "meeting" | "event" | "policy" | "action" | "task" | "system" | "approval";
+  type: "info" | "meeting" | "event" | "policy" | "action" | "task" | "system" | "approval" | "action_item_assigned" | "meeting_approval" | "policy_created" | "policy_status_changed";
   title: string;
   message: string;
   href?: string | null;
@@ -32,6 +32,10 @@ const icons = {
   task: ListChecks,
   system: Settings2,
   approval: CheckCheck,
+  action_item_assigned: ListChecks,
+  meeting_approval: CalendarDays,
+  policy_created: FileText,
+  policy_status_changed: FileText,
   info: Info,
 };
 

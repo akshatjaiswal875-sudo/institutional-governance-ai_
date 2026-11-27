@@ -4,7 +4,7 @@ type GeminiGenerateResponse = {
   error?: { message?: string };
 };
 
-const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
+const DEFAULT_GEMINI_MODEL = "gemini-3.8-flash";
 const MAX_PROMPT_CHARS = 120_000;
 
 export function isGeminiConfigured(): boolean {
@@ -16,7 +16,7 @@ export async function generateWithGemini(prompt: string, options?: { json?: bool
   if (!apiKey) throw new Error("GEMINI_API_KEY is missing.");
 
   const configuredModel = (process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL).replace(/^models\//, "");
-  const modelsToTry = [...new Set([configuredModel, DEFAULT_GEMINI_MODEL])];
+  // Do not retry a retired model after the configured model fails. That hid the real error in production logs.\n  const modelsToTry = [configuredModel];
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 45_000);
   try {

@@ -161,11 +161,16 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
     console.error("[meeting-intelligence/poll]", error);
     const message = error instanceof Error ? error.message : "Unable to complete recording analysis.";
     if (supabase && recordingId) {
-      await supabase.from("meeting_recordings").update({
+      const update = supabase.from("meeting_recordings").update({
         status: "failed",
         processing_job_id: null,
         error_message: message.slice(0, 500),
-      }).eq("id", recordingId).eq("status", "analyzing");
+      }).eq("id", recordingId);
+      if (message.toLowerCase().includes("transcription job not found")) {
+        await update.eq("status", "transcribing");
+      } else {
+        await update.eq("status", "analyzing");
+      }
     }
     const status = message === "UNAUTHORIZED" ? 401 : message === "FORBIDDEN" ? 403 : message === "MEETING_NOT_FOUND" ? 404 : 500;
     return NextResponse.json({ error: message }, { status });

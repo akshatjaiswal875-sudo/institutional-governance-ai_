@@ -74,6 +74,18 @@ async function markNotificationRead(id: string) {
   return payload?.data as { id: string; read_at: string };
 }
 
+async function markAllNotificationsRead() {
+  const response = await fetch("/api/notifications", {
+    method: "PATCH",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "mark_all_read" }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload?.error || "Unable to update notifications.");
+  return Array.isArray(payload?.data) ? payload.data as { id: string; read_at: string }[] : [];
+}
+
 export function NotificationsView() {
   const [rows, setRows] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
@@ -113,7 +125,7 @@ export function NotificationsView() {
     if (!unread.length) return;
     setError("");
     try {
-      const results = await Promise.all(unread.map((id) => markNotificationRead(id)));
+      const results = await markAllNotificationsRead();
       const readAt = new Map(results.map((item) => [item.id, item.read_at]));
       setRows((current) =>
         current.map((item) =>

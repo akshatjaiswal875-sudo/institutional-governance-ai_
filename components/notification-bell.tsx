@@ -34,10 +34,29 @@ export function NotificationBell() {
     } catch { void refresh(); }
   }
   async function markAllRead() {
+    if (busy || unread === 0) return;
     setBusy(true);
-    const pending = rows.filter(row => !row.read_at);
-    await Promise.all(pending.map(row => markRead(row.id)));
-    setBusy(false);
+    try {
+      const response = await fetch("/api/notifications", {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "mark_all_read" }),
+      });
+      if (!response.ok) throw new Error("Unable to mark notifications as read.");
+      const payload = await response.json();
+      const readAtById = new Map<string, string>(
+        (Array.isArray(payload.data) ? payload.data : []).map((item: { id: string; read_at: string }) => [item.id, item.read_at]),
+      );
+      setRows(current => current.map(row => row.read_at ? row : {
+        ...row,
+        read_at: readAtById.get(row.id) || new Date().toISOString(),
+      }));
+    } catch {
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
   }
   useEffect(() => {
     void refresh();

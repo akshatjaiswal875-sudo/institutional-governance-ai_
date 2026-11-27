@@ -44,20 +44,39 @@ export function Nav() {
   useEffect(() => {
     const supabase = createClient();
     let active = true;
+    let refreshTimer: ReturnType<typeof setInterval> | undefined;
+
+    const refreshUnread = async () => {
+      try {
+        const response = await fetch("/api/notifications", { credentials: "include", cache: "no-store" });
+        const payload = await response.json();
+        if (active && response.ok) setUnread(Number(payload.unread_count) || 0);
+      } catch { /* Keep the last known count if the network is temporarily unavailable. */ }
+    };
+
     supabase.auth.getUser().then(async ({ data }) => {
       if (!active || !data.user) return;
       setEmail(data.user.email ?? "");
-      const [{ data: profile }, { count }] = await Promise.all([
-        supabase.from("users").select("role").eq("id", data.user.id).maybeSingle(),
-        supabase.from("notifications").select("id", { count: "exact", head: true }).eq("user_id", data.user.id).is("read_at", null),
-      ]);
-      if (active) { setRole(profile?.role ?? null); setUnread(count ?? 0); }
+      const { data: profile } = await supabase.from("users").select("role").eq("id", data.user.id).maybeSingle();
+      if (active) setRole(profile?.role ?? null);
+      await refreshUnread();
+      if (active) refreshTimer = setInterval(() => { void refreshUnread(); }, 30000);
     });
+    const onFocus = () => { void refreshUnread(); };
+    window.addEventListener("focus", onFocus);
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       if (!active) return;
-      if (event === "SIGNED_OUT" || !session?.user) { setEmail(""); setRole(null); setUnread(0); }
+      if (event === "SIGNED_OUT" || !session?.user) {
+        setEmail(""); setRole(null); setUnread(0);
+        if (refreshTimer) clearInterval(refreshTimer);
+      }
     });
-    return () => { active = false; listener.subscription.unsubscribe(); };
+    return () => {
+      active = false;
+      if (refreshTimer) clearInterval(refreshTimer);
+      window.removeEventListener("focus", onFocus);
+      listener.subscription.unsubscribe();
+    };
   }, []);
 
   if (pathname === "/login") return null;

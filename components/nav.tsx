@@ -54,13 +54,17 @@ export function Nav() {
       } catch { /* Keep the last known count if the network is temporarily unavailable. */ }
     };
 
-    supabase.auth.getUser().then(async ({ data }) => {
-      if (!active || !data.user) return;
-      setEmail(data.user.email ?? "");
-      const { data: profile } = await supabase.from("users").select("role").eq("id", data.user.id).maybeSingle();
+    const syncUser = async (userId: string, userEmail: string) => {
+      if (!active) return;
+      setEmail(userEmail);
+      const { data: profile } = await supabase.from("users").select("role").eq("id", userId).maybeSingle();
       if (active) setRole(profile?.role ?? null);
       await refreshUnread();
-      if (active) refreshTimer = setInterval(() => { void refreshUnread(); }, 30000);
+      if (active && !refreshTimer) refreshTimer = setInterval(() => { void refreshUnread(); }, 30000);
+    };
+
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user) void syncUser(data.user.id, data.user.email ?? "");
     });
     const onFocus = () => { void refreshUnread(); };
     window.addEventListener("focus", onFocus);
@@ -68,7 +72,14 @@ export function Nav() {
       if (!active) return;
       if (event === "SIGNED_OUT" || !session?.user) {
         setEmail(""); setRole(null); setUnread(0);
-        if (refreshTimer) clearInterval(refreshTimer);
+        if (refreshTimer) {
+          clearInterval(refreshTimer);
+          refreshTimer = undefined;
+        }
+        return;
+      }
+      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
+        void syncUser(session.user.id, session.user.email ?? "");
       }
     });
     return () => {

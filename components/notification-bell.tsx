@@ -46,7 +46,7 @@ export function NotificationBell() {
       if (!response.ok) throw new Error("Unable to mark notifications as read.");
       const payload = await response.json();
       const readAtById = new Map<string, string>(
-        (Array.isArray(payload.data) ? payload.data : []).map((item: { id: string; read_at: string }) => [item.id, item.read_at]),
+        (Array.isArray(payload.data) ? payload.data : []).map((item: { id: string; read_at: string }) => [item.id, item.read_at] as [string, string]),
       );
       setRows(current => current.map(row => row.read_at ? row : {
         ...row,

@@ -19,6 +19,15 @@ describe("scheduler participant constraints (isolated fixtures)", () => {
     const defaultStart = Date.parse("2026-11-16T04:00:00.000Z"); // Monday, 9:30 AM IST
     expect(isParticipantAvailable({ startEpoch: defaultStart, endEpoch: defaultStart + 60 * 60_000, availability: [], preference: defaultPreference, busy: [], exceptions: [] })).toBe(true);
   });
+  it("uses the default schedule for weekdays missing from a partial weekly profile", () => {
+    const tuesdayStart = Date.parse("2026-11-17T04:00:00.000Z"); // Tuesday, 9:30 AM IST
+    expect(isParticipantAvailable({ startEpoch: tuesdayStart, endEpoch: tuesdayStart + 60 * 60_000, availability: recurringIndia, preference: defaultPreference, busy: [], exceptions: [] })).toBe(true);
+  });
+  it("respects an explicit unavailable row instead of applying the default", () => {
+    const tuesdayStart = Date.parse("2026-11-17T04:00:00.000Z");
+    const explicitUnavailable: AvailabilityRow[] = [{ user_id: "fixture-india", day_of_week: 2, start_time: "09:00", end_time: "17:00", available: false }];
+    expect(isParticipantAvailable({ startEpoch: tuesdayStart, endEpoch: tuesdayStart + 60 * 60_000, availability: explicitUnavailable, preference: defaultPreference, busy: [], exceptions: [] })).toBe(false);
+  });
   it("does not apply the default schedule on weekends", () => {
     const sundayStart = Date.parse("2026-11-22T04:00:00.000Z"); // Sunday, 9:30 AM IST
     expect(isParticipantAvailable({ startEpoch: sundayStart, endEpoch: sundayStart + 60 * 60_000, availability: [], preference: defaultPreference, busy: [], exceptions: [] })).toBe(false);

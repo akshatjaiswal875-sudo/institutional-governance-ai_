@@ -4,6 +4,10 @@ export type UnavailabilityRow = { user_id: string; starts_at: string; ends_at: s
 export type BusyItem = { user_id: string; start: number; end: number; source: "event" | "meeting" | "timetable" };
 
 const weekdays: Record<string, number> = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 };
+const DEFAULT_WORK_START_MINUTES = 9 * 60;
+const DEFAULT_WORK_END_MINUTES = 17 * 60;
+const DEFAULT_WORK_DAYS = new Set([1, 2, 3, 4, 5]);
+
 export function localWindow(epoch: number, timezone: string) {
   const parts = new Intl.DateTimeFormat("en-US", { timeZone: timezone || "Asia/Kolkata", weekday: "short", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(epoch));
   const get = (type: string) => parts.find(part => part.type === type)?.value ?? "";
@@ -21,8 +25,15 @@ export function isParticipantAvailable(input: {
   const start = localWindow(startEpoch, timezone);
   const end = localWindow(endEpoch, timezone);
   if (endEpoch <= startEpoch || start.date !== end.date || start.weekday !== end.weekday) return false;
-  const weekly = availability.some(row => row.available && row.day_of_week === start.weekday &&
-    start.minutes >= minutesFromTime(row.start_time) && end.minutes <= minutesFromTime(row.end_time));
+
+  // A user with no saved weekly availability has not configured their schedule.
+  // Use a conservative weekday working-hours default instead of treating them
+  // as unavailable for every possible meeting slot. Explicit saved availability
+  // continues to take precedence, including explicit unavailable days.
+  const weekly = availability.length === 0
+    ? DEFAULT_WORK_DAYS.has(start.weekday) && start.minutes >= DEFAULT_WORK_START_MINUTES && end.minutes <= DEFAULT_WORK_END_MINUTES
+    : availability.some(row => row.available && row.day_of_week === start.weekday &&
+      start.minutes >= minutesFromTime(row.start_time) && end.minutes <= minutesFromTime(row.end_time));
   if (!weekly) return false;
   if (preference.preferred_start_time && start.minutes < minutesFromTime(preference.preferred_start_time)) return false;
   if (preference.preferred_end_time && end.minutes > minutesFromTime(preference.preferred_end_time)) return false;

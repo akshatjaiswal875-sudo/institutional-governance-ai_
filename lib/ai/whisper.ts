@@ -30,6 +30,46 @@ async function transcribeViaWorker(file: File): Promise<string> {
   } finally { clearTimeout(timeout); }
 }
 
+async function transcribeViaGroq(file: File): Promise<string> {
+  const apiKey = process.env.GROQ_API_KEY?.trim();
+  if (!apiKey) throw new Error("GROQ_API_KEY is missing.");
+  const maxBytes = 25 * 1024 * 1024;
+  if (file.size > maxBytes) {
+    throw new Error("This recording is larger than Groq's 25 MB free-tier upload limit. Compress it or split it into smaller audio parts and retry.");
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10 * 60 * 1000);
+  try {
+    const form = new FormData();
+    form.append("file", file, file.name || "recording");
+    form.append("model", process.env.GROQ_WHISPER_MODEL?.trim() || "whisper-large-v3-turbo");
+    form.append("response_format", "json");
+    const response = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}` },
+      body: form,
+      signal: controller.signal,
+    });
+    const bodyText = await response.text();
+    if (!response.ok) {
+      let providerMessage = "";
+      try { const parsed = JSON.parse(bodyText) as { error?: { message?: string } | string }; providerMessage = typeof parsed.error === "string" ? parsed.error : parsed.error?.message || ""; } catch {}
+      if (response.status === 429) throw new Error("Groq Whisper free-tier rate limit reached. Please retry later; the recording has not been marked as transcribed.");
+      if (response.status === 413) throw new Error("Groq rejected this recording because it exceeds the upload-size limit.");
+      throw new Error(`Groq Whisper failed (${response.status}). ${providerMessage}`.trim());
+    }
+    let payload: { text?: string };
+    try { payload = JSON.parse(bodyText) as { text?: string }; } catch { throw new Error("Groq Whisper returned an invalid response."); }
+    const transcript = payload.text?.trim();
+    if (!transcript) throw new Error("Groq Whisper returned an empty transcript.");
+    return transcript;
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") throw new Error("Groq Whisper timed out.");
+    throw error;
+  } finally { clearTimeout(timeout); }
+}
+
 async function transcribeViaHuggingFace(file: File): Promise<string> {
   const apiKey = process.env.HUGGINGFACE_API_KEY?.trim();
   if (!apiKey) throw new Error("HUGGINGFACE_API_KEY is missing.");
@@ -92,6 +132,7 @@ async function transcribeLocally(file: File): Promise<string> {
 
 export async function transcribeLocalAudio(file: File): Promise<string> {
   if (process.env.WHISPER_WORKER_URL?.trim()) return transcribeViaWorker(file);
+  if (process.env.GROQ_API_KEY?.trim()) return transcribeViaGroq(file);
   if (process.env.HUGGINGFACE_API_KEY?.trim()) return transcribeViaHuggingFace(file);
   return transcribeLocally(file);
 }

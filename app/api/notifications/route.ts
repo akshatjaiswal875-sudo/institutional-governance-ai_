@@ -6,7 +6,6 @@ type NotificationRow = {
   type: string;
   title: string;
   message: string;
-  href: string | null;
   target_table: string | null;
   target_id: string | null;
   read_at: string | null;
@@ -27,9 +26,7 @@ function getNotificationHref(row: NotificationRow) {
     }
   }
 
-  // Older notification producers may store a direct in-app destination.
-  // Only allow local paths; never turn database content into an external redirect.
-  return row.href?.startsWith("/") && !row.href.startsWith("//") ? row.href : null;
+  return null;
 }
 
 export async function GET() {
@@ -38,7 +35,7 @@ export async function GET() {
     const [{ data, error }, { count, error: countError }] = await Promise.all([
       supabase
         .from("notifications")
-        .select("id,type,title,message,href,target_table,target_id,read_at,created_at")
+        .select("id,type,title,message,target_table,target_id,read_at,created_at")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
         .limit(100),

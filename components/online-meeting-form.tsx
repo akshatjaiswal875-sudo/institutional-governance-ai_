@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { CalendarDays, CheckCircle2, Clock3, Link2, MapPin, Video, UserPlus, X } from "lucide-react";
 
-type ParticipantOption = { id: string; email: string; role: string; department?: string | null };
+type ParticipantOption = { id: string; email: string };
 
 async function createMeeting(body: unknown) {
   const response = await fetch("/api/meetings", {
@@ -54,7 +54,7 @@ export function OnlineMeetingForm() {
     const query = participantQuery.trim().toLowerCase();
     return participantOptions.filter(option =>
       !selectedParticipantIds.includes(option.id)
-      && `${option.email} ${option.role} ${option.department ?? ""}`.toLowerCase().includes(query)
+      && option.email.toLowerCase().includes(query)
     );
   }, [participantOptions, participantQuery, selectedParticipantIds]);
 
@@ -181,7 +181,7 @@ export function OnlineMeetingForm() {
               className="input mt-3 bg-white"
               value={participantQuery}
               onChange={event => setParticipantQuery(event.target.value)}
-              placeholder="Search by email, role or department"
+              placeholder="Search by institutional email"
               aria-label="Search participants"
             />
             <select
@@ -197,7 +197,7 @@ export function OnlineMeetingForm() {
               <option value="">{participantsLoading ? "Loading users..." : availableParticipants.length ? "Choose a participant to add" : "No matching users available"}</option>
               {availableParticipants.map(option => (
                 <option key={option.id} value={option.id}>
-                  {option.email} · {option.role}{option.department ? ` · ${option.department}` : ""}
+                  {option.email}
                 </option>
               ))}
             </select>

@@ -347,7 +347,7 @@ export function WorkflowActions({
       const response = await fetch(`/api/meetings/${meetingId}/workflow`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, approverId, approverEmail: availableApprovers.find(item => item.id === approverId)?.email }),
+        body: JSON.stringify({ action, approverId, approverEmail: availableApprovers.find(item => item.id === approverId)?.email, department }),
       });
       const result = await response.json();
       if (!response.ok) { setError(result.error ?? "Workflow action failed."); return; }

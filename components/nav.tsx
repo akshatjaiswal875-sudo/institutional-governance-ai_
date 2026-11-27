@@ -59,8 +59,8 @@ export function Nav() {
       setEmail(userEmail);
       const { data: profile } = await supabase.from("users").select("role").eq("id", userId).maybeSingle();
       if (active) setRole(profile?.role ?? null);
-      await refreshUnread();
       if (active && !refreshTimer) refreshTimer = setInterval(() => { void refreshUnread(); }, 30000);
+      await refreshUnread();
     };
 
     supabase.auth.getUser().then(({ data }) => {

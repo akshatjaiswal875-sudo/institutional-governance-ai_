@@ -26,28 +26,37 @@ export async function GET() {
   try {
     const { profile } = await requireUser([...SUGGESTION_VIEWERS]);
     const admin = createAdminClient();
-    const { data, error } = await admin
-      .from("suggestions")
-      .select(`
-        id, submitted_by, title, content, status, reviewer_id, review_notes, created_at, updated_at,
-        policy_tags:suggestion_policy_tags(
-          policies:policy_id(id, custom_id, title, status, deleted_at)
-        ),
-        event_tags:suggestion_event_tags(
-          events:event_id(id, custom_id, title, deleted_at)
-        ),
-        submitter:users!suggestions_submitted_by_fkey(id, email, role, department)
-      `)
-      .is("deleted_at", null)
-      .order("created_at", { ascending: false })
-      .order("id", { ascending: false });
+    const selection = `
+      id, submitted_by, title, content, status, reviewer_id, review_notes, created_at, updated_at,
+      policy_tags:suggestion_policy_tags(
+        policies:policy_id(id, custom_id, title, status, deleted_at)
+      ),
+      event_tags:suggestion_event_tags(
+        events:event_id(id, custom_id, title, deleted_at)
+      ),
+      submitter:users!suggestions_submitted_by_fkey(id, email, role, department)
+    `;
+    const allSuggestions: SuggestionRow[] = [];
+    const pageSize = 500;
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await admin
+        .from("suggestions")
+        .select(selection)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .range(from, from + pageSize - 1);
 
-    if (error) {
-      console.error("[api/suggestions] Failed to load suggestions", { code: error.code, message: error.message });
-      return NextResponse.json({ error: "Unable to load suggestions." }, { status: 500 });
+      if (error) {
+        console.error("[api/suggestions] Failed to load suggestions", { code: error.code, message: error.message, offset: from });
+        return NextResponse.json({ error: "Unable to load suggestions." }, { status: 500 });
+      }
+      const page = (data ?? []) as unknown as SuggestionRow[];
+      allSuggestions.push(...page);
+      if (page.length < pageSize) break;
     }
 
-    const rows = ((data ?? []) as unknown as SuggestionRow[])
+    const rows = allSuggestions
       .filter((item) => {
         if (profile.role !== "HOD") return true;
         const ownDepartment = profile.department?.trim().toLocaleLowerCase();

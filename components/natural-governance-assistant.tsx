@@ -76,17 +76,18 @@ export function NaturalGovernanceAssistant() {
   const [meetingDialogOpen, setMeetingDialogOpen] = useState(false);
   const [meetingPrompt, setMeetingPrompt] = useState("");
   const [timetableFile, setTimetableFile] = useState<File | null>(null);
+  const [facultyEmail, setFacultyEmail] = useState("");
   const [uploadingTimetable, setUploadingTimetable] = useState(false);
 
   async function uploadTimetable() {
     if (!timetableFile || uploadingTimetable) return;
     setUploadingTimetable(true); setError("");
     try {
-      const form = new FormData(); form.append("file", timetableFile);
+      const form = new FormData(); form.append("file", timetableFile); if (facultyEmail.trim()) form.append("facultyEmail", facultyEmail.trim());
       const response = await fetch("/api/calendar/timetable/import", { method: "POST", body: form });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Timetable upload failed.");
-      setMessages(prev => [...prev, { role: "assistant", content: `Imported ${result.imported} ${result.format === "weekly" ? "weekly recurring periods" : "dated timetable rows"} from ${result.source}. ${result.skipped ? `${result.skipped} rows were skipped.` : "All valid periods were imported."} ${result.message ?? ""}` }]);
+      setMessages(prev => [...prev, { role: "assistant", content: `Imported ${result.imported} ${result.format === "weekly" ? "weekly recurring periods" : "dated timetable rows"} from ${result.source} for ${result.owner || "your account"}. ${result.skipped ? `${result.skipped} rows were skipped.` : "All valid periods were imported."} ${result.message ?? ""}` }]);
       setTimetableFile(null);
       const picker = document.getElementById("institutional-timetable-file") as HTMLInputElement | null;
       if (picker) picker.value = "";
@@ -170,10 +171,11 @@ export function NaturalGovernanceAssistant() {
     <div><h1 className="text-3xl font-semibold">AI Governance Assistant</h1><p className="mt-2 text-slate-400">Talk naturally about meetings, decisions, action items, policies and events.</p></div>
     <section className="card border border-cyan-400/20 p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0"><h2 className="font-semibold">My weekly timetable</h2><p className="mt-1 text-sm text-slate-400">Available to every signed-in user, including HOD and Faculty accounts. Upload your own weekly Excel schedule here.</p><p className="mt-1 text-xs text-slate-500">Accepted: .xlsx, .xls, .csv · Weekly layout: Day rows, period time columns, and subject/section cells. Free or blank periods are ignored.</p></div>
+        <div className="min-w-0"><h2 className="font-semibold">Faculty timetable</h2><p className="mt-1 text-sm text-slate-400">Upload your own timetable, or enter a faculty email if you are an authorized Director, Super Admin, or HOD.</p><p className="mt-1 text-xs text-slate-500">Accepted: .xlsx, .xls, .csv · Weekly layout: Day rows, period time columns, and subject/section cells. Free or blank periods are ignored.</p></div>
         <div className="flex w-full flex-col gap-2 sm:max-w-sm">
+          <input value={facultyEmail} onChange={e => setFacultyEmail(e.target.value)} type="email" placeholder="Faculty email (optional)" aria-label="Faculty email for timetable assignment" className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white placeholder:text-slate-500"/>
           <input id="institutional-timetable-file" type="file" accept=".xlsx,.xls,.csv" onChange={e => setTimetableFile(e.target.files?.[0] ?? null)} className="block w-full text-xs text-slate-400 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-800 file:px-3 file:py-2 file:text-slate-200"/>
-          <button onClick={() => void uploadTimetable()} disabled={!timetableFile || uploadingTimetable} className="btn btn-secondary w-full">{uploadingTimetable ? "Importing timetable…" : "Upload my timetable"}</button>
+          <button onClick={() => void uploadTimetable()} disabled={!timetableFile || uploadingTimetable} className="btn btn-secondary w-full">{uploadingTimetable ? "Importing timetable…" : "Upload timetable"}</button>
         </div>
       </div>
     </section>

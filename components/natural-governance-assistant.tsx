@@ -191,7 +191,17 @@ export function NaturalGovernanceAssistant() {
         {error && <p className="mb-3 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-sm text-red-300" role="alert">{error}</p>}
         <form onSubmit={submit} className="mt-4 flex gap-2"><input value={query} onChange={e => setQuery(e.target.value)} className="input flex-1" placeholder="Ask anything about your institution..." disabled={busy}/><button className="btn btn-primary" disabled={busy || !query.trim()}><Send size={16}/></button></form>
       </section>
-      <aside className="space-y-4">
+      <aside className="space-y-4 lg:sticky lg:top-6">
+        <section className="card flex min-h-[560px] flex-col overflow-hidden border border-cyan-400/20">
+          <div className="border-b border-slate-800 px-5 py-4">
+            <div className="flex items-center gap-2"><Sparkles size={17} className="text-cyan-300"/><h2 className="font-semibold">AI Workspace</h2></div>
+            <p className="mt-1 text-xs text-slate-500">Responses and generated results appear here while your conversation stays on the left.</p>
+          </div>
+          <div className="flex-1 overflow-auto p-5">
+            {activeResult ? <AssistantMessage content={activeResult.content} sources={activeResult.sources} aiAvailable={activeResult.aiAvailable}/> : <div className="flex h-full min-h-72 flex-col items-center justify-center text-center"><div className="mb-4 rounded-2xl border border-slate-700 bg-slate-900 p-4"><Sparkles size={26} className="text-cyan-300"/></div><h3 className="font-medium text-slate-200">Your results will appear here</h3><p className="mt-2 max-w-xs text-sm text-slate-500">Ask about meetings, policies, decisions or action items to see the response in this workspace.</p></div>}
+            {busy && <div className="mt-5 flex items-center gap-2 text-sm text-slate-400"><Bot size={15}/> Updating workspace<span className="animate-pulse">...</span></div>}
+          </div>
+        </section>
         <div className="card p-5"><h2 className="font-semibold">Create a meeting with AI</h2><p className="mt-2 text-sm text-slate-400">Any signed-in user can create a meeting. You will own and manage the meeting you create.</p><button onClick={() => { setError(""); setMeetingDialogOpen(true); }} className="btn btn-primary mt-4 inline-flex items-center gap-2" disabled={busy}><CalendarPlus size={17}/>Create meeting with AI</button></div>
 
         {draft && <div className="card p-5"><h2 className="font-semibold">Review meeting</h2><div className="mt-3 space-y-2 text-sm"><p><b>Title:</b> {draft.title}</p><p><b>AI-selected time:</b> {draft.date ? new Date(draft.date).toLocaleString("en-IN", { dateStyle: "full", timeStyle: "short" }) : findingBestTime ? "Checking calendars…" : "Not selected yet"}</p><p><b>Location:</b> {draft.location ?? "Not specified"}</p><p><b>Participants:</b> {draft.participantQuery || "Not specified"}</p>{draft.topic && <p><b>Agenda:</b> {draft.topic}</p>}</div>

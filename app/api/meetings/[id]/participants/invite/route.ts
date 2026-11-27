@@ -68,7 +68,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("Meeting invitation failed:", error);
     if (message.toLowerCase().includes("email notifications are not configured") || message.toLowerCase().includes("smtp")) {
-      return NextResponse.json({ error: "Meeting email is not configured on the server. Please configure the Gmail SMTP credentials in Render." }, { status: 503 });
+      return NextResponse.json({ error: "Meeting email is not configured on the server. Please configure the Gmail SMTP credentials in Vercel Production environment variables." }, { status: 503 });
     }
     if (message.toLowerCase().includes("invitation email could not be sent")) {
       return NextResponse.json({ error: message }, { status: 502 });

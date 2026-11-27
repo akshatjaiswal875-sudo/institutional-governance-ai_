@@ -151,7 +151,7 @@ export function NotificationsView() {
     setError("");
     try {
       const results = await markAllNotificationsRead();
-      const readAt = new Map(results.map((item) => [item.id, item.read_at]));
+      const readAt = new Map<string, string>(results.map((item) => [item.id, item.read_at] as [string, string]));
       setRows((current) =>
         current.map((item) =>
           item.read_at ? item : { ...item, read_at: readAt.get(item.id) || new Date().toISOString() },

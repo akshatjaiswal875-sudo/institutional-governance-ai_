@@ -6,12 +6,12 @@ export const dynamic = "force-dynamic";
 
 const validId = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 
-export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
+export async function PATCH(request: Request, context: { params: { id: string } }) {
   try {
     const { user, profile } = await requireUser();
     const email = String(profile.email || user.email || "").trim().toLowerCase();
     if (!email) return NextResponse.json({ error: "Your account has no institutional email address." }, { status: 403 });
-    const { id } = await context.params;
+    const { id } = context.params;
     if (!validId(id)) return NextResponse.json({ error: "Invalid timetable entry." }, { status: 400 });
 
     const body = await request.json();

@@ -70,7 +70,7 @@ export async function POST(request: Request) {
         } else {
           // A department name resolves only to its HOD and faculty, never to
           // every account registered in the institution.
-          const { data, error } = await admin.from("users").select("id,email,role,department").ilike("department", q).in("role", ["HOD", "Faculty / Officer", "Faculty"]).order("email").limit(50);
+          const { data, error } = await admin.from("users").select("id,email,role,department").ilike("department", q).in("role", ["HOD", "Faculty / Officer"]).order("email").limit(50);
           if (error) throw error;
           participants = data ?? [];
         }
@@ -85,7 +85,7 @@ export async function POST(request: Request) {
       if (!title || !date) return NextResponse.json({ error: "Meeting title and date/time are required." }, { status: 400 });
       if (!participantIds.length) return NextResponse.json({ error: "Select at least one participant." }, { status: 400 });
 
-      const { data: validUsers, error: usersError } = await admin.from("users").select("id,email,role,department").in("id", participantIds).in("role", ["HOD", "Faculty / Officer", "Faculty", "Director", "Principal", "Super Admin", "Meeting Secretary", "Coordinators", "Coordinator"]);
+      const { data: validUsers, error: usersError } = await admin.from("users").select("id,email,role,department").in("id", participantIds).in("role", ["HOD", "Faculty / Officer", "Director", "Principal", "Super Admin", "Meeting Secretary", "Coordinators", "Coordinator"]);
       if (usersError) throw usersError; if (!validUsers?.length) return NextResponse.json({ error: "No valid participants were selected." }, { status: 400 });
 
       const { data: meeting, error: meetingError } = await supabase.from("meetings").insert({ title, date, location, type: draft?.type === "online" ? "online" : "offline", created_by: user.id, status: "Draft" }).select("id,title,date,location,created_by,status").single();

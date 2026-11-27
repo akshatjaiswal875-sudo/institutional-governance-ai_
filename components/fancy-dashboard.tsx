@@ -54,6 +54,7 @@ export function FancyDashboard() {
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [greetingName, setGreetingName] = useState("User");
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     const supabase = createClient();
@@ -70,12 +71,31 @@ export function FancyDashboard() {
       setEvents(Array.isArray(eventRows) ? eventRows : []);
       setUsers(Array.isArray(userRows) ? userRows : []);
     }).finally(() => setLoading(false));
+
+    // Keep the dashboard's "Upcoming events" window current while it stays open.
+    const clock = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(clock);
   }, []);
 
   const published = meetings.filter((m) => m.status === "Published").length;
   const approved = meetings.filter((m) => m.status === "Approved").length;
   const pending = meetings.filter((m) => m.status === "Pending Approval").length;
-  const upcoming = useMemo(() => [...events].sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()).slice(0, 4), [events]);
+  const upcoming = useMemo(() => events
+    .filter((event) => {
+      const startTime = Date.parse(event.start_time);
+      const status = String(event.status ?? "").toLowerCase();
+      if (!Number.isFinite(startTime) || status === "cancelled" || status === "completed") return false;
+
+      // Include events happening now as well as events that have not started.
+      // For an ongoing event without an end time, retain it until its status changes.
+      const endTime = event.end_time
+        ? Date.parse(event.end_time)
+        : status === "ongoing" ? Number.POSITIVE_INFINITY : startTime;
+
+      return Number.isFinite(endTime) ? endTime >= now : status === "ongoing";
+    })
+    .sort((a, b) => Date.parse(a.start_time) - Date.parse(b.start_time))
+    .slice(0, 4), [events, now]);
   const recentMeetings = useMemo(() => [...meetings].slice(0, 5), [meetings]);
 
   const metrics = [

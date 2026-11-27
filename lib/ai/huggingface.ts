@@ -10,11 +10,7 @@ type HuggingFaceResult = {
 
 const MAX_TRANSCRIPT_CHARS = 120_000;
 const DEFAULT_ANALYSIS_MODEL = "openai/gpt-oss-120b:fastest";
-const FALLBACK_ANALYSIS_MODELS = [
-  "openai/gpt-oss-120b:fastest",
-  "Qwen/Qwen2.5-7B-Instruct:fastest",
-  "Qwen/Qwen2.5-1.5B-Instruct:fastest",
-];
+const FALLBACK_ANALYSIS_MODELS = [DEFAULT_ANALYSIS_MODEL];
 
 function resolveAnalysisModel(configured?: string) {
   const model = configured?.trim();

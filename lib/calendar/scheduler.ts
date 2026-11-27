@@ -16,33 +16,40 @@ export function localWindow(epoch: number, timezone: string) {
 function minutesFromTime(value: string) { const [hours, minutes] = String(value).slice(0, 5).split(":").map(Number); return hours * 60 + minutes; }
 function overlaps(start: number, end: number, busy: BusyItem[]) { return busy.some(item => start < item.end && end > item.start); }
 
-export function isParticipantAvailable(input: {
+export type AvailabilityFailureReason = "invalid_window" | "outside_weekly_availability" | "outside_preferred_hours" | "unavailable_exception" | "calendar_conflict" | "daily_meeting_limit" | null;
+
+export function participantAvailabilityFailure(input: {
   startEpoch: number; endEpoch: number; availability: AvailabilityRow[];
   preference: PreferenceRow; busy: BusyItem[]; exceptions: UnavailabilityRow[];
-}) {
+}): AvailabilityFailureReason {
   const { startEpoch, endEpoch, availability, preference, busy, exceptions } = input;
   const timezone = preference.timezone || "Asia/Kolkata";
   const start = localWindow(startEpoch, timezone);
   const end = localWindow(endEpoch, timezone);
-  if (endEpoch <= startEpoch || start.date !== end.date || start.weekday !== end.weekday) return false;
+  if (endEpoch <= startEpoch || start.date !== end.date || start.weekday !== end.weekday) return "invalid_window";
 
-  // A user with no saved weekly availability has not configured their schedule.
-  // Use a conservative weekday working-hours default instead of treating them
-  // as unavailable for every possible meeting slot. Explicit saved availability
-  // continues to take precedence, including explicit unavailable days.
-  const weekly = availability.length === 0
+  // Apply defaults per weekday, not per user. A saved Monday schedule must
+  // not accidentally make Tuesday-Sunday unavailable when those days have
+  // no rows. An explicit row (including available=false) overrides the default.
+  const dayRows = availability.filter(row => row.day_of_week === start.weekday);
+  const weekly = dayRows.length === 0
     ? DEFAULT_WORK_DAYS.has(start.weekday) && start.minutes >= DEFAULT_WORK_START_MINUTES && end.minutes <= DEFAULT_WORK_END_MINUTES
-    : availability.some(row => row.available && row.day_of_week === start.weekday &&
-      start.minutes >= minutesFromTime(row.start_time) && end.minutes <= minutesFromTime(row.end_time));
-  if (!weekly) return false;
-  if (preference.preferred_start_time && start.minutes < minutesFromTime(preference.preferred_start_time)) return false;
-  if (preference.preferred_end_time && end.minutes > minutesFromTime(preference.preferred_end_time)) return false;
-  if (exceptions.some(item => startEpoch < new Date(item.ends_at).getTime() && endEpoch > new Date(item.starts_at).getTime())) return false;
+    : dayRows.some(row => row.available && start.minutes >= minutesFromTime(row.start_time) && end.minutes <= minutesFromTime(row.end_time));
+  if (!weekly) return "outside_weekly_availability";
+  if (preference.preferred_start_time && start.minutes < minutesFromTime(preference.preferred_start_time)) return "outside_preferred_hours";
+  if (preference.preferred_end_time && end.minutes > minutesFromTime(preference.preferred_end_time)) return "outside_preferred_hours";
+  if (exceptions.some(item => startEpoch < new Date(item.ends_at).getTime() && endEpoch > new Date(item.starts_at).getTime())) return "unavailable_exception";
   const bufferMs = Math.max(0, Number(preference.buffer_minutes) || 0) * 60_000;
   const buffered = busy.map(item => ({ ...item, start: item.start - bufferMs, end: item.end + bufferMs }));
-  if (overlaps(startEpoch, endEpoch, buffered)) return false;
-  const meetingCount = busy.filter(item => item.source === "meeting" &&
-    localWindow(item.start, timezone).date === start.date).length;
-  if (meetingCount >= Math.max(1, Number(preference.max_meetings_per_day) || 5)) return false;
-  return true;
+  if (overlaps(startEpoch, endEpoch, buffered)) return "calendar_conflict";
+  const meetingCount = busy.filter(item => item.source === "meeting" && localWindow(item.start, timezone).date === start.date).length;
+  if (meetingCount >= Math.max(1, Number(preference.max_meetings_per_day) || 5)) return "daily_meeting_limit";
+  return null;
+}
+
+export function isParticipantAvailable(input: {
+  startEpoch: number; endEpoch: number; availability: AvailabilityRow[];
+  preference: PreferenceRow; busy: BusyItem[]; exceptions: UnavailabilityRow[];
+}) {
+  return participantAvailabilityFailure(input) === null;
 }

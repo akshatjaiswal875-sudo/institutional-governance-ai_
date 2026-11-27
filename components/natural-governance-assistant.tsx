@@ -4,7 +4,7 @@ import { FormEvent, ReactNode, useState } from "react";
 import { Bot, CalendarPlus, Check, Clock3, Send, Sparkles, UserRound, X } from "lucide-react";
 
 async function api<T>(url: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(url, { ...options, headers: { "Content-Type": "application/json", ...(options?.headers ?? {}) } });
+  const response = await fetch(url, { cache: "no-store", ...options, headers: { "Content-Type": "application/json", ...(options?.headers ?? {}) } });
   const result = await response.json();
   if (!response.ok) throw new Error(result.error ?? "Request failed");
   return result.data as T;
@@ -15,7 +15,7 @@ type Message = { role: "user" | "assistant"; content: string; sources?: Assistan
 type ActionDraft = { title: string; date: string | null; location: string | null; participantQuery: string; topic: string; windowHint?: "next_week" | "next_7_days" };
 type Participant = { id: string; email: string; role: string; department?: string | null };
 type BestTimeSlot = { start: string; end: string; availableCount: number; participantCount: number; score: number; reason: string };
-type BestTimeResult = { recommended: BestTimeSlot | null; alternatives: BestTimeSlot[]; provider: "gemini" | "openai" | "deterministic" | "none"; searchedFrom: string; searchedUntil: string; durationMinutes: number; participantCount: number; diagnostics?: { candidateSlotsEvaluated: number; rejectionCounts: Record<string, number> } };
+type BestTimeResult = { recommended: BestTimeSlot | null; alternatives: BestTimeSlot[]; provider: "gemini" | "openai" | "deterministic" | "none"; searchedFrom: string; searchedUntil: string; durationMinutes: number; participantCount: number; diagnostics?: { candidateSlotsEvaluated: number; rejectionCounts: Record<string, number>; participants?: Array<{ email: string; role: string; department: string | null; blockers: Record<string, number> }>; timetableRowsMatched?: number; eventConflictsLoaded?: number; existingMeetingsLoaded?: number; availabilityRowsLoaded?: number; unavailabilityRowsLoaded?: number; timezone?: string; candidateGrid?: string }; diagnosticsVersion?: number };
 
 function inlineMarkdown(text: string): ReactNode[] {
   const tokens = text.split(/(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g).filter(Boolean);
@@ -112,8 +112,10 @@ export function NaturalGovernanceAssistant() {
       if (result.recommended) {
         setDraft(current => current ? { ...current, date: result.recommended!.start } : current);
       } else {
-        const reasons = Object.entries(result.diagnostics?.rejectionCounts ?? {}).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([reason, count]) => `${reason.replace(/_/g, " ")} (${count})`).join(", ");
-        setError(`No common free slot was found from ${result.searchedFrom} to ${result.searchedUntil}. Checked ${result.diagnostics?.candidateSlotsEvaluated ?? 0} possible slots. Main blockers: ${reasons || "no matching working-hours slots"}. Review participant availability and uploaded timetable entries.`);
+        const diagnostics = result.diagnostics;
+        const reasons = Object.entries(diagnostics?.rejectionCounts ?? {}).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([reason, count]) => `${reason.replace(/_/g, " ")} (${count})`).join(", ");
+        const people = (diagnostics?.participants ?? []).map(person => { const top = Object.entries(person.blockers).sort((a, b) => b[1] - a[1])[0]; return `${person.email}: ${top ? `${top[0].replace(/_/g, " ")} (${top[1]})` : "no rejection recorded"}`; }).join("; ");
+        setError(`Scheduler diagnostics v${result.diagnosticsVersion ?? "legacy"} — no common slot from ${result.searchedFrom} to ${result.searchedUntil}. Evaluated ${diagnostics?.candidateSlotsEvaluated ?? 0} future slots (${diagnostics?.candidateGrid ?? "grid unavailable"}). Blockers: ${reasons || "none reported"}. Timetable matches: ${diagnostics?.timetableRowsMatched ?? "?"}; events: ${diagnostics?.eventConflictsLoaded ?? "?"}; meetings: ${diagnostics?.existingMeetingsLoaded ?? "?"}; availability rows: ${diagnostics?.availabilityRowsLoaded ?? "?"}; leave rows: ${diagnostics?.unavailabilityRowsLoaded ?? "?"}. ${people ? `Participant detail: ${people}.` : "Participant-level detail unavailable."} Check faculty timetable ownership and each participant’s scheduling profile.`);
       }
       return result;
     } catch (e) { setError(e instanceof Error ? e.message : "Unable to find a common free time."); return null; }

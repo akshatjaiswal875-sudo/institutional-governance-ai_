@@ -25,7 +25,7 @@ function parseMeetingRequest(message: string) {
   const topicMatch = message.match(/\b(?:for|to discuss|about|regarding)\s+(.+?)(?=\s+(?:tomorrow|today|next week|on|at)\b|[,.]|$)/i);
   const locationMatch = message.match(/\bat\s+([^,.]+?)(?=\s+(?:tomorrow|today|next week|to discuss|about|regarding)\b|[,.]|$)/i);
   let participantQuery = clean(withMatch?.[1]).replace(/^(?:the|all)\s+/i, "");
-  const aliases: Record<string, string> = { hod: "HOD", hods: "HOD", "head of department": "HOD", "heads of departments": "HOD", faculty: "Faculty / Officer", faculties: "Faculty / Officer", "meeting secretary": "Meeting Secretary", coordinator: "Coordinators", coordinators: "Coordinators", members: "Member" };
+  const aliases: Record<string, string> = { hod: "HOD", hods: "HOD", "head of department": "HOD", "heads of department": "HOD", "heads of departments": "HOD", faculty: "Faculty / Officer", faculties: "Faculty / Officer", "meeting secretary": "Meeting Secretary", coordinator: "Coordinators", coordinators: "Coordinators", members: "Member" };
   participantQuery = aliases[participantQuery.toLowerCase()] ?? participantQuery;
   const topic = clean(topicMatch?.[1]);
   return {
@@ -48,7 +48,8 @@ export async function POST(request: Request) {
       let usedFallback = false;
       if (draft.participantQuery) {
         const q = draft.participantQuery.trim();
-        const roleAliases: Record<string, string> = {
+        type UserRole = "HOD" | "Faculty / Officer" | "Director" | "Principal" | "Super Admin" | "Meeting Secretary" | "Coordinators" | "Coordinator";
+        const roleAliases: Record<string, UserRole> = {
           hod: "HOD", hods: "HOD", "head of department": "HOD", "heads of departments": "HOD",
           faculty: "Faculty / Officer", faculties: "Faculty / Officer",
           director: "Director", principal: "Principal", "super admin": "Super Admin",

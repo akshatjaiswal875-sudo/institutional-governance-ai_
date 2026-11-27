@@ -44,11 +44,44 @@ export function MeetingIntelligence({ meetingId, canManage }: { meetingId: strin
     catch (e) { setError(e instanceof Error ? e.message : "Upload failed."); } finally { setBusy(false); }
   }
 
-  async function processRecording(recordingId: string) {
+  async function processRecording(recordingId: string, existingJobId?: string) {
     if (processingId) return;
-    setProcessingId(recordingId); setError(""); setMessage("Transcribing audio and generating analysis with the configured AI providers…");
-    try { await readJson(await fetch(`/api/meetings/${meetingId}/intelligence/process`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ recordingId }) })); setMessage("Processing completed. Review the results below."); await load(); }
-    catch (e) { setError(e instanceof Error ? e.message : "Processing failed."); await load().catch((): void => undefined); } finally { setProcessingId(null); }
+    setProcessingId(recordingId); setError(""); setMessage("Starting free self-hosted Whisper transcription…");
+    try {
+      let jobId = existingJobId;
+      if (!jobId) {
+        const started = await readJson(await fetch(`/api/meetings/${meetingId}/intelligence/process`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ recordingId }),
+        }));
+        jobId = started.data.jobId;
+      }
+      if (!jobId) throw new Error("The Whisper worker did not return a job ID.");
+      setMessage("Transcribing audio on the free CPU worker. This can take several minutes…");
+      const deadline = Date.now() + 45 * 60 * 1000;
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+        const result = await readJson(await fetch(
+          `/api/meetings/${meetingId}/intelligence/process?recordingId=${encodeURIComponent(recordingId)}&jobId=${encodeURIComponent(jobId)}`,
+          { cache: "no-store" },
+        ));
+        if (result.data.status === "completed") {
+          setMessage("Transcription and AI analysis completed. Review the results below.");
+          await load();
+          return;
+        }
+        setMessage(result.data.status === "analyzing"
+          ? "Transcript generated. Creating the meeting summary and action items…"
+          : "Whisper is transcribing your recording. Please keep this page open…");
+      }
+      throw new Error("Transcription is taking longer than expected. You can resume it from this page.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Processing failed.");
+      await load().catch((): void => undefined);
+    } finally {
+      setProcessingId(null);
+    }
   }
 
   async function deleteRecording(id: string) {
@@ -83,11 +116,11 @@ export function MeetingIntelligence({ meetingId, canManage }: { meetingId: strin
   return <Card title="Meeting Intelligence"><div className="space-y-6">
     <section className="rounded-xl border border-slate-800 p-4"><div className="mb-3 flex items-center justify-between"><div><h3 className="font-semibold">Recording</h3><p className="text-sm text-slate-400">Source audio/video and processing controls.</p></div><Badge>{data.recordings.length} file{data.recordings.length === 1 ? "" : "s"}</Badge></div>
       {canManage && <form onSubmit={upload} className="mb-4 flex flex-wrap gap-3"><input type="file" accept="audio/*,video/*" onChange={(e) => setFile(e.target.files?.[0] || null)} /><button className="btn btn-primary" disabled={!file || busy}>{busy ? "Working…" : "Upload"}</button></form>}
-      <div className="space-y-3">{data.recordings.map((r) => <div key={r.id} className="rounded-lg border border-slate-800 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><div><p className="font-medium">{r.original_filename}</p><p className="text-xs text-slate-400">{(r.file_size / 1024 / 1024).toFixed(2)} MB</p></div><Badge>{r.status}</Badge></div>{r.error_message && <p className="mt-2 text-sm text-red-400">{r.error_message}</p>}<div className="mt-3 flex flex-wrap gap-2"><button className="btn btn-secondary" onClick={() => play(r.id)}>Play</button>{canManage && ["uploaded", "failed"].includes(r.status) && <button className="btn btn-secondary" disabled={!!processingId} onClick={() => processRecording(r.id)}>{processingId === r.id ? "Processing…" : r.status === "failed" ? "Retry" : "Process"}</button>}{canManage && <label className="btn btn-secondary cursor-pointer">Replace<input className="hidden" type="file" accept="audio/*,video/*" onChange={(e) => replaceRecording(r.id, e.target.files?.[0])} /></label>} {canManage && <button className="btn btn-secondary" disabled={busy} onClick={() => deleteRecording(r.id)}>Delete</button>}</div></div>)}</div>
+      <div className="space-y-3">{data.recordings.map((r) => <div key={r.id} className="rounded-lg border border-slate-800 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><div><p className="font-medium">{r.original_filename}</p><p className="text-xs text-slate-400">{(r.file_size / 1024 / 1024).toFixed(2)} MB</p></div><Badge>{r.status}</Badge></div>{r.error_message && <p className="mt-2 text-sm text-red-400">{r.error_message}</p>}<div className="mt-3 flex flex-wrap gap-2"><button className="btn btn-secondary" onClick={() => play(r.id)}>Play</button>{canManage && ["uploaded", "failed", "transcribing"].includes(r.status) && <button className="btn btn-secondary" disabled={!!processingId} onClick={() => processRecording(r.id, r.status === "transcribing" ? r.processing_job_id : undefined)}>{processingId === r.id ? "Processing…" : r.status === "failed" ? "Retry" : r.status === "transcribing" ? "Resume" : "Process"}</button>}{canManage && <label className="btn btn-secondary cursor-pointer">Replace<input className="hidden" type="file" accept="audio/*,video/*" onChange={(e) => replaceRecording(r.id, e.target.files?.[0])} /></label>} {canManage && <button className="btn btn-secondary" disabled={busy} onClick={() => deleteRecording(r.id)}>Delete</button>}</div></div>)}</div>
       {data.recordings.length === 0 && <p className="rounded-lg border border-dashed border-slate-700 p-4 text-sm text-slate-400">No recording uploaded.</p>}
     </section>
 
-    <section className="rounded-xl border border-slate-800 p-4"><div className="mb-3 flex items-center justify-between"><h3 className="font-semibold">Transcript</h3>{data.transcripts?.[0] && <Badge>{data.transcripts[0].status}</Badge>}</div>{transcript ? <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-950 p-4 text-sm leading-6">{transcript}</pre> : <p className="text-sm text-slate-400">Transcript appears here after Local Whisper processing.</p>}</section>
+    <section className="rounded-xl border border-slate-800 p-4"><div className="mb-3 flex items-center justify-between"><h3 className="font-semibold">Transcript</h3>{data.transcripts?.[0] && <Badge>{data.transcripts[0].status}</Badge>}</div>{transcript ? <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-950 p-4 text-sm leading-6">{transcript}</pre> : <p className="text-sm text-slate-400">Transcript appears here after the self-hosted Whisper worker finishes.</p>}</section>
 
     <section className="rounded-xl border border-slate-800 p-4"><div className="mb-4 flex items-center justify-between"><div><h3 className="font-semibold">AI Analysis</h3><p className="text-sm text-slate-400">AI-generated output for owner review (Gemini primary, Hugging Face fallback).</p></div>{analysis && <Badge>{analysis.status === "approved" ? "Approved" : "Requires Review"}</Badge>}</div>{!analysis ? <p className="text-sm text-slate-400">No AI analysis yet.</p> : <div className="space-y-4">{canManage ? <><label className="block text-sm">Summary<textarea className="textarea mt-1" value={summary} onChange={(e) => setSummary(e.target.value)} /></label><label className="block text-sm">Suggested Minutes<textarea className="textarea mt-1 min-h-32" value={minutes} onChange={(e) => setMinutes(e.target.value)} /></label><div><h4 className="mb-2 font-medium">Decisions</h4>{decisions.map((d, i) => <div className="mb-2 rounded-lg border border-slate-800 p-3" key={i}><textarea className="textarea" value={d.decision_text || ""} onChange={(e) => setDecisions((x) => x.map((v, n) => n === i ? { ...v, decision_text: e.target.value } : v))} /><input className="input mt-2" value={d.action_item || ""} placeholder="Action item" onChange={(e) => setDecisions((x) => x.map((v, n) => n === i ? { ...v, action_item: e.target.value } : v))} /></div>)}{!decisions.length && <p className="text-sm text-slate-400">No decisions extracted.</p>}</div><div><h4 className="mb-2 font-medium">Action Items</h4>{actions.map((a, i) => <div className="mb-2 grid gap-2 rounded-lg border border-slate-800 p-3 sm:grid-cols-3" key={i}><input className="input sm:col-span-2" value={a.task || ""} placeholder="Task" onChange={(e) => setActions((x) => x.map((v, n) => n === i ? { ...v, task: e.target.value } : v))} /><input className="input" value={a.assignee_email || ""} placeholder="Assignee" onChange={(e) => setActions((x) => x.map((v, n) => n === i ? { ...v, assignee_email: e.target.value } : v))} /><input className="input" type="date" value={a.deadline || ""} onChange={(e) => setActions((x) => x.map((v, n) => n === i ? { ...v, deadline: e.target.value } : v))} /><select className="select" value={a.priority || "Medium"} onChange={(e) => setActions((x) => x.map((v, n) => n === i ? { ...v, priority: e.target.value } : v))}><option>Low</option><option>Medium</option><option>High</option><option>Critical</option></select></div>)}{!actions.length && <p className="text-sm text-slate-400">No action items extracted.</p>}</div>{analysis.status !== "approved" && <button className="btn btn-primary" disabled={busy} onClick={approve}>{busy ? "Saving…" : "Approve reviewed results"}</button>}</> : <><p className="whitespace-pre-wrap text-sm text-slate-300">{summary}</p><p className="whitespace-pre-wrap text-sm text-slate-300">{minutes}</p></>}</div>}</section>
     {message && <p className="text-emerald-300" role="status">{message}</p>}{error && <p className="text-red-400" role="alert">{error}</p>}

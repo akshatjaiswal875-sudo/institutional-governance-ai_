@@ -55,7 +55,7 @@ export function ParticipantSelector({
       for (const userId of selected) {
         const response = await fetch(`/api/meetings/${meetingId}/participants`, {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId, attendanceStatus: "Invited" }),
+          body: JSON.stringify({ userId, attendanceStatus: "Invited", role, department }),
         });
         const result = await response.json();
         if (!response.ok) throw new Error(result.error ?? "Could not add participant.");

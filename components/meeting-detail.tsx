@@ -60,7 +60,7 @@ export function MeetingDetailView() {
   if (!record) return <p className="text-red-400" role="alert">{error || "Meeting not found."}</p>;
   const meeting = record.meeting;
   const existingIds = record.participants.map(participant => participant.user_id);
-  const canManage = currentUserId === meeting.created_by;
+  const canManage = currentUserId === meeting.created_by || currentRole === "Super Admin";
   const canAssignTasks = canManage;
 
   return <div className="space-y-6">

@@ -56,7 +56,9 @@ function relativeTime(value: string) {
       });
 }
 
-async function readNotifications(): Promise<Notification[]> {
+type NotificationResponse = { data: Notification[]; unread_count: number; total_count: number };
+
+async function readNotifications(): Promise<NotificationResponse> {
   const response = await fetch("/api/notifications", {
     method: "GET",
     credentials: "include",
@@ -64,7 +66,11 @@ async function readNotifications(): Promise<Notification[]> {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload?.error || "Unable to load notifications.");
-  return Array.isArray(payload?.data) ? (payload.data as Notification[]) : [];
+  return {
+    data: Array.isArray(payload?.data) ? payload.data as Notification[] : [],
+    unread_count: Number(payload?.unread_count) || 0,
+    total_count: Number(payload?.total_count) || 0,
+  };
 }
 
 async function markNotificationRead(id: string) {
@@ -93,33 +99,47 @@ async function markAllNotificationsRead() {
 
 export function NotificationsView() {
   const [rows, setRows] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
     let active = true;
-    readNotifications()
-      .then((data) => {
-        if (active) setRows(data);
-      })
-      .catch((e) => {
+    const load = async () => {
+      try {
+        const result = await readNotifications();
+        if (active) {
+          setRows(result.data);
+          setUnreadCount(result.unread_count);
+          setTotalCount(result.total_count);
+          setError("");
+        }
+      } catch (e) {
         if (active) setError(e instanceof Error ? e.message : "Unable to load notifications.");
-      })
-      .finally(() => {
+      } finally {
         if (active) setLoading(false);
-      });
+      }
+    };
+    void load();
+    const timer = window.setInterval(() => { void load(); }, 30000);
+    window.addEventListener("focus", load);
     return () => {
       active = false;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", load);
     };
   }, []);
 
   async function markRead(id: string) {
     setError("");
+    const existing = rows.find((item) => item.id === id);
     try {
       const updated = await markNotificationRead(id);
       setRows((current) =>
         current.map((item) => (item.id === id ? { ...item, read_at: updated.read_at } : item)),
       );
+      if (existing && !existing.read_at) setUnreadCount((current) => Math.max(0, current - 1));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to update notification.");
     }
@@ -137,12 +157,13 @@ export function NotificationsView() {
           item.read_at ? item : { ...item, read_at: readAt.get(item.id) || new Date().toISOString() },
         ),
       );
+      setUnreadCount(0);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to update notifications.");
     }
   }
 
-  const unread = rows.filter((item) => !item.read_at).length;
+  const unread = unreadCount;
 
   return (
     <main className="space-y-6 pb-10">
@@ -164,7 +185,7 @@ export function NotificationsView() {
         </div>
         <div className="relative mt-6 grid max-w-xl grid-cols-2 gap-3">
           <div className="rounded-xl border border-white/5 bg-white/[.035] p-4">
-            <p className="text-2xl font-bold text-white">{rows.length}</p>
+            <p className="text-2xl font-bold text-white">{totalCount}</p>
             <p className="text-xs text-slate-500">Total notifications</p>
           </div>
           <div className="rounded-xl border border-white/5 bg-white/[.035] p-4">

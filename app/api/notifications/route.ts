@@ -32,7 +32,7 @@ function getNotificationHref(row: NotificationRow) {
 export async function GET() {
   try {
     const { supabase, user } = await requireUser();
-    const [{ data, error }, { count, error: countError }] = await Promise.all([
+    const [{ data, error }, { count: unreadCount, error: unreadError }, { count: totalCount, error: totalError }] = await Promise.all([
       supabase
         .from("notifications")
         .select("id,type,title,message,target_table,target_id,read_at,created_at")
@@ -44,10 +44,15 @@ export async function GET() {
         .select("id", { count: "exact", head: true })
         .eq("user_id", user.id)
         .is("read_at", null),
+      supabase
+        .from("notifications")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id),
     ]);
 
     if (error) throw error;
-    if (countError) throw countError;
+    if (unreadError) throw unreadError;
+    if (totalError) throw totalError;
 
     const notifications = ((data ?? []) as NotificationRow[]).map((row) => ({
       id: row.id,
@@ -59,7 +64,7 @@ export async function GET() {
       created_at: row.created_at,
     }));
 
-    return NextResponse.json({ data: notifications, unread_count: count ?? 0 }, {
+    return NextResponse.json({ data: notifications, unread_count: unreadCount ?? 0, total_count: totalCount ?? 0 }, {
       headers: { "Cache-Control": "private, no-store, max-age=0" },
     });
   } catch (error) {
@@ -76,6 +81,9 @@ export async function PATCH(request: NextRequest) {
     let body: { id?: unknown; action?: unknown };
     try {
       body = await request.json();
+      if (!body || typeof body !== "object" || Array.isArray(body)) {
+        return NextResponse.json({ error: "A JSON object is required." }, { status: 400 });
+      }
     } catch {
       return NextResponse.json({ error: "A valid JSON body is required." }, { status: 400 });
     }

@@ -308,64 +308,76 @@ export function DecisionActions({
 }
 
 export function WorkflowActions({
-	meetingId,
-	status,
-	assignedApproverId,
-	approvers,
-	role,
+  meetingId,
+  status,
+  assignedApproverId,
+  approvers,
+  role,
+  departments,
 }: {
-	meetingId: string;
-	status: string;
-	assignedApproverId: string | null;
-	approvers: ParticipantOption[];
-	role: string;
+  meetingId: string;
+  status: string;
+  assignedApproverId: string | null;
+  approvers: ParticipantOption[];
+  role: string;
+  departments: string[];
 }) {
-	const [approverId, setApproverId] = useState(assignedApproverId ?? "");
-	const [error, setError] = useState("");
-	const [saving, setSaving] = useState(false);
-	const router = useRouter();
-	const canAssign = role === "Super Admin" || role === "Meeting Secretary";
+  const [approverId, setApproverId] = useState(assignedApproverId ?? "");
+  const [department, setDepartment] = useState(approvers[0]?.department ?? "");
+  const [availableApprovers, setAvailableApprovers] = useState<ParticipantOption[]>(approvers);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const router = useRouter();
+  const canAssign = role === "Super Admin" || role === "Meeting Secretary";
 
-	async function act(action: string) {
-		if (saving) return;
-		setSaving(true);
-		setError("");
-		try {
-			const response = await fetch(`/api/meetings/${meetingId}/workflow`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-								body: JSON.stringify({ action, approverId, approverEmail: approvers.find(item => item.id === approverId)?.email }),
-			});
-			const result = await response.json();
-			if (!response.ok) {
-				setError(result.error ?? "Workflow action failed.");
-				return;
-			}
-			router.refresh();
-		} catch {
-			setError("Workflow action failed. Please try again.");
-		} finally {
-			setSaving(false);
-		}
-	}
+  useEffect(() => {
+    if (!department) { setAvailableApprovers([]); setApproverId(""); return; }
+    let cancelled = false;
+    fetch(`/api/meetings/${meetingId}/participants?role=Faculty%20%2F%20Officer&department=${encodeURIComponent(department)}`)
+      .then(async response => { const result = await response.json(); if (!response.ok) throw new Error(result.error ?? "Unable to load faculty for this department."); if (!cancelled) { setAvailableApprovers(result.data?.users ?? []); setApproverId(current => (result.data?.users ?? []).some((item: ParticipantOption) => item.id === current) ? current : ""); } })
+      .catch(value => { if (!cancelled) { setAvailableApprovers([]); setError(value instanceof Error ? value.message : "Unable to load faculty."); } });
+    return () => { cancelled = true; };
+  }, [meetingId, department]);
 
-	return (
-		<Cardless>
-			{canAssign && (
-				<div className="flex flex-wrap gap-2">
-					<select className="select max-w-xs" value={approverId} onChange={(event) => setApproverId(event.target.value)}>
-						<option value="">Select Faculty / Officer</option>
-						{approvers.map((approver) => <option key={approver.id} value={approver.id}>{approver.email}</option>)}
-					</select>
-					<button type="button" className="btn btn-secondary" onClick={() => act("assign")} disabled={saving || !approverId}>Assign approver</button>
-				</div>
-			)}
-			{canAssign && ["Draft", "Rejected", "Transcribed"].includes(status) && <button type="button" className="btn btn-primary" onClick={() => act("submit")} disabled={saving || !assignedApproverId}>Submit for approval</button>}
-			{(role === "Super Admin" || role === "Faculty / Officer") && status === "Pending Approval" && <><button type="button" className="btn btn-primary" onClick={() => act("approve")} disabled={saving}>Approve</button><button type="button" className="btn btn-secondary" onClick={() => act("reject")} disabled={saving}>Reject</button></>}
-			{role === "Super Admin" && status === "Approved" && <button type="button" className="btn btn-primary" onClick={() => act("publish")} disabled={saving}>Publish</button>}
-			{error && <p className="w-full text-red-400" role="alert">{error}</p>}
-		</Cardless>
-	);
+  async function act(action: string) {
+    if (saving) return;
+    setSaving(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/meetings/${meetingId}/workflow`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, approverId, approverEmail: availableApprovers.find(item => item.id === approverId)?.email }),
+      });
+      const result = await response.json();
+      if (!response.ok) { setError(result.error ?? "Workflow action failed."); return; }
+      router.refresh();
+    } catch {
+      setError("Workflow action failed. Please try again.");
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <Cardless>
+      {canAssign && (
+        <div className="flex flex-wrap gap-2">
+          <select className="select max-w-xs" value={department} onChange={event => setDepartment(event.target.value)}>
+            <option value="">Select department</option>
+            {departments.map(item => <option key={item} value={item}>{item}</option>)}
+          </select>
+          <select className="select max-w-xs" value={approverId} onChange={event => setApproverId(event.target.value)} disabled={!department || !availableApprovers.length}>
+            <option value="">{!department ? "Choose department first" : availableApprovers.length ? "Select Faculty / Officer" : "No faculty in this department"}</option>
+            {availableApprovers.map(approver => <option key={approver.id} value={approver.id}>{approver.email}</option>)}
+          </select>
+          <button type="button" className="btn btn-secondary" onClick={() => act("assign")} disabled={saving || !approverId}>Assign approver</button>
+        </div>
+      )}
+      {canAssign && ["Draft", "Rejected", "Transcribed"].includes(status) && <button type="button" className="btn btn-primary" onClick={() => act("submit")} disabled={saving || !assignedApproverId}>Submit for approval</button>}
+      {(role === "Super Admin" || role === "Faculty / Officer") && status === "Pending Approval" && <><button type="button" className="btn btn-primary" onClick={() => act("approve")} disabled={saving}>Approve</button><button type="button" className="btn btn-secondary" onClick={() => act("reject")} disabled={saving}>Reject</button></>}
+      {role === "Super Admin" && status === "Approved" && <button type="button" className="btn btn-primary" onClick={() => act("publish")} disabled={saving}>Publish</button>}
+      {error && <p className="w-full text-red-400" role="alert">{error}</p>}
+    </Cardless>
+  );
 }
 
 function Cardless({ children }: { children: React.ReactNode }) {

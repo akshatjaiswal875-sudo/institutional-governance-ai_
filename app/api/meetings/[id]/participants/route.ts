@@ -49,7 +49,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
     const department = typeof body.department === "string" ? body.department.trim() : "";
     const attendanceStatus = typeof body.attendanceStatus === "string" && body.attendanceStatus.trim() ? body.attendanceStatus.trim() : "Invited";
     if (!userId || !requestedRole) return NextResponse.json({ error: "Participant and role are required." }, { status: 400 });
-    const needsDepartment = requestedRole === "HOD" || requestedRole === "Faculty / Officer" || requestedRole === "Faculty";
+    const needsDepartment = requestedRole === "HOD" || requestedRole === "Faculty / Officer";
     if (!(ASSIGNABLE_ROLES as readonly string[]).includes(requestedRole) || (needsDepartment && !department)) return NextResponse.json({ error: "Choose a valid role and department." }, { status: 400 });
     const { data: meeting } = await supabase.from("meetings").select("id,created_by").eq("id", params.id).maybeSingle();
     if (!meeting) return NextResponse.json({ error: "Meeting not found." }, { status: 404 });

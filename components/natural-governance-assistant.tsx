@@ -65,6 +65,7 @@ function formatSlot(start: string, end: string) {
 
 export function NaturalGovernanceAssistant() {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [activeResult, setActiveResult] = useState<Message | null>(null);
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [findingBestTime, setFindingBestTime] = useState(false);
@@ -86,7 +87,8 @@ export function NaturalGovernanceAssistant() {
       const response = await fetch("/api/calendar/timetable/import", { method: "POST", body: form });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Timetable upload failed.");
-      setMessages(prev => [...prev, { role: "assistant", content: `Imported ${result.imported} ${result.format === "weekly" ? "weekly recurring periods" : "dated timetable rows"} from ${result.source}. ${result.skipped ? `${result.skipped} rows were skipped.` : "All valid periods were imported."} ${result.message ?? ""}` }]);
+      const importedMessage: Message = { role: "assistant", content: `Imported ${result.imported} ${result.format === "weekly" ? "weekly recurring periods" : "dated timetable rows"} from ${result.source}. ${result.skipped ? `${result.skipped} rows were skipped.` : "All valid periods were imported."} ${result.message ?? ""}` };
+      setMessages(prev => [...prev, importedMessage]); setActiveResult(importedMessage);
       setTimetableFile(null);
       const picker = document.getElementById("institutional-timetable-file") as HTMLInputElement | null;
       if (picker) picker.value = "";
@@ -97,8 +99,11 @@ export function NaturalGovernanceAssistant() {
   async function ask(text: string) {
     const message = text.trim(); if (!message || busy) return;
     setBusy(true); setError(""); setQuery(""); setMessages(prev => [...prev, { role: "user", content: message }]);
-    try { const result = await api<any>("/api/assistant", { method: "POST", body: JSON.stringify({ message }) }); setMessages(prev => [...prev, { role: "assistant", content: result.answer ?? "I couldn't find a useful answer.", sources: Array.isArray(result.sources) ? result.sources : [], aiAvailable: result.aiAvailable !== false }]); }
-    catch (e) { setError(e instanceof Error ? e.message : "Assistant failed."); }
+    try {
+      const result = await api<any>("/api/assistant", { method: "POST", body: JSON.stringify({ message }) });
+      const assistantMessage: Message = { role: "assistant", content: result.answer ?? "I could not find a useful answer.", sources: Array.isArray(result.sources) ? result.sources : [], aiAvailable: result.aiAvailable !== false };
+      setMessages(prev => [...prev, assistantMessage]); setActiveResult(assistantMessage);
+    } catch (e) { setError(e instanceof Error ? e.message : "Assistant failed."); }
     finally { setBusy(false); }
   }
 
@@ -156,7 +161,8 @@ export function NaturalGovernanceAssistant() {
     try {
       const result = await api<any>("/api/assistant/meeting-action", { method: "POST", body: JSON.stringify({ action: "confirm", draft, participantIds: selected }) });
       const invitationText = result.invitationErrors?.length ? ` ${result.invitationErrors.length} invitation(s) need attention.` : ` Invitations were sent to ${result.participants.length} participant(s).`;
-      setMessages(prev => [...prev, { role: "assistant", content: `Meeting created successfully: ${result.meeting.title}.${invitationText}` }]);
+      const createdMessage: Message = { role: "assistant", content: `Meeting created successfully: ${result.meeting.title}.${invitationText}` };
+      setMessages(prev => [...prev, createdMessage]); setActiveResult(createdMessage);
       setDraft(null); setParticipants([]); setSelected([]); setBestTimeResult(null); setError("");
     } catch (e) { setError(e instanceof Error ? e.message : "Unable to create meeting."); }
     finally { setBusy(false); }
@@ -176,7 +182,7 @@ export function NaturalGovernanceAssistant() {
         </div>
       </div>
     </section>
-    <div className="grid gap-6 lg:grid-cols-[1fr_330px]">
+    <div className="grid items-start gap-6 lg:grid-cols-2">
       <section className="card flex min-h-[560px] flex-col p-5">
         <div className="flex-1 space-y-4 overflow-auto pr-1">
           {!messages.length && <div className="py-16 text-center"><Sparkles className="mx-auto mb-4" size={34}/><h2 className="text-xl font-semibold">How can I help?</h2><p className="mx-auto mt-2 max-w-lg text-slate-400">Ask in normal language. You don't need exact commands or database terms.</p><div className="mt-6 flex flex-wrap justify-center gap-2">{suggestions.map(s => <button key={s} onClick={() => void ask(s)} className="btn btn-secondary text-sm">{s}</button>)}</div></div>}
@@ -186,12 +192,22 @@ export function NaturalGovernanceAssistant() {
         {error && <p className="mb-3 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-sm text-red-300" role="alert">{error}</p>}
         <form onSubmit={submit} className="mt-4 flex gap-2"><input value={query} onChange={e => setQuery(e.target.value)} className="input flex-1" placeholder="Ask anything about your institution..." disabled={busy}/><button className="btn btn-primary" disabled={busy || !query.trim()}><Send size={16}/></button></form>
       </section>
-      <aside className="space-y-4">
+      <aside className="space-y-4 lg:sticky lg:top-6">
+        <section className="card flex min-h-[560px] flex-col overflow-hidden border border-cyan-400/20">
+          <div className="border-b border-slate-800 px-5 py-4">
+            <div className="flex items-center gap-2"><Sparkles size={17} className="text-cyan-300"/><h2 className="font-semibold">AI Workspace</h2></div>
+            <p className="mt-1 text-xs text-slate-500">Responses and generated results appear here while your conversation stays on the left.</p>
+          </div>
+          <div className="flex-1 overflow-auto p-5">
+            {activeResult ? <AssistantMessage content={activeResult.content} sources={activeResult.sources} aiAvailable={activeResult.aiAvailable}/> : <div className="flex h-full min-h-72 flex-col items-center justify-center text-center"><div className="mb-4 rounded-2xl border border-slate-700 bg-slate-900 p-4"><Sparkles size={26} className="text-cyan-300"/></div><h3 className="font-medium text-slate-200">Your results will appear here</h3><p className="mt-2 max-w-xs text-sm text-slate-500">Ask about meetings, policies, decisions or action items to see the response in this workspace.</p></div>}
+            {busy && <div className="mt-5 flex items-center gap-2 text-sm text-slate-400"><Bot size={15}/> Updating workspace<span className="animate-pulse">...</span></div>}
+          </div>
+        </section>
         <div className="card p-5"><h2 className="font-semibold">Create a meeting with AI</h2><p className="mt-2 text-sm text-slate-400">Any signed-in user can create a meeting. You will own and manage the meeting you create.</p><button onClick={() => { setError(""); setMeetingDialogOpen(true); }} className="btn btn-primary mt-4 inline-flex items-center gap-2" disabled={busy}><CalendarPlus size={17}/>Create meeting with AI</button></div>
 
         {draft && <div className="card p-5"><h2 className="font-semibold">Review meeting</h2><div className="mt-3 space-y-2 text-sm"><p><b>Title:</b> {draft.title}</p><p><b>AI-selected time:</b> {draft.date ? new Date(draft.date).toLocaleString("en-IN", { dateStyle: "full", timeStyle: "short" }) : findingBestTime ? "Checking calendars…" : "Not selected yet"}</p><p><b>Location:</b> {draft.location ?? "Not specified"}</p><p><b>Participants:</b> {draft.participantQuery || "Not specified"}</p>{draft.topic && <p><b>Agenda:</b> {draft.topic}</p>}</div>
           {participants.length > 0 && <div className="mt-4 max-h-48 space-y-2 overflow-auto">{participants.map(p => <label key={p.id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={selected.includes(p.id)} onChange={e => { setSelected(v => e.target.checked ? [...v, p.id] : v.filter(id => id !== p.id)); setBestTimeResult(null); }}/><span>{p.email}{p.department ? ` · ${p.department}` : ""}</span></label>)}</div>}
-          {participants.length === 0 && draft.participantQuery && <p className="mt-4 text-sm text-amber-300">No matching participant was found. Try a department such as Faculty or an exact user email.</p>}
+          {participants.length === 0 && draft.participantQuery && <p className="mt-4 text-sm text-amber-300">No matching participant was found. Try a department such as CSE, or request HODs or faculty from a specific department.</p>}
           <button onClick={() => void findBestTime()} disabled={busy || findingBestTime || !selected.length} className="btn btn-secondary mt-4 w-full inline-flex items-center justify-center gap-2"><Sparkles size={16}/>{findingBestTime ? "Analyzing calendars..." : "Find Best Time ✨"}</button>
           {bestTimeResult?.recommended && <div className="mt-4 rounded-2xl border border-cyan-400/20 bg-cyan-400/5 p-4"><div className="flex items-center gap-2 text-sm font-semibold text-cyan-200"><Sparkles size={15}/> AI recommended time</div><p className="mt-2 font-semibold text-white">{formatSlot(bestTimeResult.recommended.start, bestTimeResult.recommended.end)}</p><p className="mt-1 text-xs text-slate-400">{bestTimeResult.recommended.availableCount}/{bestTimeResult.recommended.participantCount} participants available · score {bestTimeResult.recommended.score}</p><p className="mt-2 text-xs leading-5 text-slate-300">{bestTimeResult.recommended.reason}</p><button onClick={() => useBestTime(bestTimeResult.recommended!)} className="btn btn-primary mt-3 w-full">Use this time</button><div className="mt-2 text-center text-[10px] uppercase tracking-widest text-slate-500">Ranking: {bestTimeResult.provider}</div></div>}
           {bestTimeResult?.alternatives?.length > 0 && <div className="mt-4 space-y-2"><p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Alternative slots</p>{bestTimeResult.alternatives.slice(0, 3).map(slot => <button key={`${slot.start}-${slot.end}`} onClick={() => useBestTime(slot)} className="w-full rounded-xl border border-slate-700/70 bg-slate-900/60 p-3 text-left hover:border-cyan-400/30"><div className="flex items-center gap-2 text-sm font-medium text-slate-200"><Clock3 size={14} className="text-cyan-300"/>{formatSlot(slot.start, slot.end)}</div><p className="mt-1 text-xs text-slate-500">{slot.reason}</p></button>)}</div>}

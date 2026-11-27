@@ -24,12 +24,13 @@ export async function POST(request: Request, { params }: { params: { id: string 
     if (action === "assign") {
       if (!isOwner) return NextResponse.json({ error: "Only the meeting creator can assign an approver." }, { status: 403 });
       const approverEmail = typeof body.approverEmail === "string" ? body.approverEmail.trim().toLowerCase() : "";
+      const department = typeof body.department === "string" ? body.department.trim() : "";
       if (!approverEmail) return NextResponse.json({ error: "Select an approver by email." }, { status: 400 });
 
       const admin = createAdminClient();
-      const { data: approver, error } = await admin.from("users").select("id,email,role").eq("email", approverEmail).maybeSingle();
+      const { data: approver, error } = await admin.from("users").select("id,email,role,department").eq("email", approverEmail).maybeSingle();
       if (error) throw error;
-      if (!approver || approver.role !== "Faculty / Officer") return NextResponse.json({ error: "That user is not eligible to approve meetings." }, { status: 400 });
+      if (!department || !approver || approver.role !== "Faculty / Officer" || approver.department !== department) return NextResponse.json({ error: "That faculty account does not belong to the selected department." }, { status: 400 });
       assignedApproverId = approver.id;
     } else if (action === "submit") {
       if (!isOwner) return NextResponse.json({ error: "Only the meeting creator can submit this meeting." }, { status: 403 });

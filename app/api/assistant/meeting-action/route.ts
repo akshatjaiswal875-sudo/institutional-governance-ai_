@@ -4,8 +4,6 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { recordAudit } from "@/lib/audit";
 import { sendMeetingInvitation } from "@/lib/invitations";
 
-const USER_ROLES = ["Super Admin", "Director", "Principal", "HOD", "Coordinators", "Meeting Secretary", "Faculty / Officer", "Member", "Auditor"] as const;
-type UserRole = (typeof USER_ROLES)[number];
 function clean(value: unknown) { return typeof value === "string" ? value.trim() : ""; }
 function parseMeetingRequest(message: string) {
   const lower = message.toLowerCase();
@@ -27,7 +25,7 @@ function parseMeetingRequest(message: string) {
   const topicMatch = message.match(/\b(?:for|to discuss|about|regarding)\s+(.+?)(?=\s+(?:tomorrow|today|next week|on|at)\b|[,.]|$)/i);
   const locationMatch = message.match(/\bat\s+([^,.]+?)(?=\s+(?:tomorrow|today|next week|to discuss|about|regarding)\b|[,.]|$)/i);
   let participantQuery = clean(withMatch?.[1]).replace(/^(?:the|all)\s+/i, "");
-  const aliases: Record<string, string> = { hod: "HOD", hods: "HOD", "head of department": "HOD", "heads of departments": "HOD", faculty: "Faculty / Officer", faculties: "Faculty / Officer", "meeting secretary": "Meeting Secretary", coordinator: "Coordinators", coordinators: "Coordinators", members: "Member" };
+  const aliases: Record<string, string> = { hod: "HOD", hods: "HOD", "head of department": "HOD", "heads of department": "HOD", "heads of departments": "HOD", faculty: "Faculty / Officer", faculties: "Faculty / Officer", "meeting secretary": "Meeting Secretary", coordinator: "Coordinators", coordinators: "Coordinators", members: "Member" };
   participantQuery = aliases[participantQuery.toLowerCase()] ?? participantQuery;
   const topic = clean(topicMatch?.[1]);
   return {
@@ -36,8 +34,6 @@ function parseMeetingRequest(message: string) {
     windowHint: nextWeek ? "next_week" : "next_7_days",
   };
 }
-function ilikePattern(value: string) { return `%${value.replace(/[\\%_]/g, (char) => `\\${char}`)}%`; }
-function asRole(value: string): UserRole | null { return (USER_ROLES as readonly string[]).includes(value) ? value as UserRole : null; }
 
 export async function POST(request: Request) {
   try {
@@ -51,26 +47,33 @@ export async function POST(request: Request) {
       let participants: any[] = [];
       let usedFallback = false;
       if (draft.participantQuery) {
-        const q = draft.participantQuery; const pattern = ilikePattern(q); const role = asRole(q);
-        // Never compare arbitrary natural-language text to the user_role enum.
-        const [emailResult, departmentResult, roleResult] = await Promise.all([
-          admin.from("users").select("id,email,role,department").ilike("email", pattern).limit(30),
-          admin.from("users").select("id,email,role,department").ilike("department", pattern).limit(30),
-          role ? admin.from("users").select("id,email,role,department").eq("role", role).limit(30) : Promise.resolve({ data: [], error: null }),
-        ]);
-        const error = emailResult.error ?? departmentResult.error ?? roleResult.error; if (error) throw error;
-        const byId = new Map<string, any>();
-        for (const row of [...(emailResult.data ?? []), ...(departmentResult.data ?? []), ...(roleResult.data ?? [])]) byId.set(row.id, row);
-        participants = [...byId.values()].slice(0, 30);
-
-        // A phrase such as "Finance Committee" may describe a group that is
-        // not stored as a role/department. Do not fail the request; give the
-        // Super Admin a bounded manual selection list instead.
-        if (!participants.length) {
-          const fallback = await admin.from("users").select("id,email,role,department").order("email").limit(50);
-          if (fallback.error) throw fallback.error;
-          participants = fallback.data ?? [];
-          usedFallback = participants.length > 0;
+        const q = draft.participantQuery.trim();
+        type UserRole = "HOD" | "Faculty / Officer" | "Director" | "Principal" | "Super Admin" | "Meeting Secretary" | "Coordinators" | "Coordinator";
+        const roleAliases: Record<string, UserRole> = {
+          hod: "HOD", hods: "HOD", "head of department": "HOD", "heads of departments": "HOD",
+          faculty: "Faculty / Officer", faculties: "Faculty / Officer",
+          director: "Director", principal: "Principal", "super admin": "Super Admin",
+          "meeting secretary": "Meeting Secretary", coordinator: "Coordinators", coordinators: "Coordinators",
+        };
+        const roleAndDepartment = q.match(/^(hods?|heads? of department|facult(?:y|ies))(?:\s+(?:of|from|in)\s+(.+))?$/i);
+        const requestedRole = roleAliases[q.toLowerCase()] ?? (roleAndDepartment ? roleAliases[roleAndDepartment[1].toLowerCase()] : null);
+        const requestedDepartment = roleAndDepartment?.[2]?.trim() ?? "";
+        if (requestedRole) {
+          let query = admin.from("users").select("id,email,role,department").eq("role", requestedRole).order("email").limit(50);
+          if (requestedDepartment) query = query.ilike("department", requestedDepartment);
+          const { data, error } = await query;
+          if (error) throw error;
+          participants = data ?? [];
+        } else if (q.includes("@")) {
+          const { data, error } = await admin.from("users").select("id,email,role,department").ilike("email", q).limit(1);
+          if (error) throw error;
+          participants = data ?? [];
+        } else {
+          // A department name resolves only to its HOD and faculty, never to
+          // every account registered in the institution.
+          const { data, error } = await admin.from("users").select("id,email,role,department").ilike("department", q).in("role", ["HOD", "Faculty / Officer"]).order("email").limit(50);
+          if (error) throw error;
+          participants = data ?? [];
         }
       }
       if (draft.participantQuery && !participants.length) needs.push("a valid participant selection");
@@ -83,7 +86,7 @@ export async function POST(request: Request) {
       if (!title || !date) return NextResponse.json({ error: "Meeting title and date/time are required." }, { status: 400 });
       if (!participantIds.length) return NextResponse.json({ error: "Select at least one participant." }, { status: 400 });
 
-      const { data: validUsers, error: usersError } = await admin.from("users").select("id,email,role,department").in("id", participantIds);
+      const { data: validUsers, error: usersError } = await admin.from("users").select("id,email,role,department").in("id", participantIds).in("role", ["HOD", "Faculty / Officer", "Director", "Principal", "Super Admin", "Meeting Secretary", "Coordinators", "Coordinator"]);
       if (usersError) throw usersError; if (!validUsers?.length) return NextResponse.json({ error: "No valid participants were selected." }, { status: 400 });
 
       const { data: meeting, error: meetingError } = await supabase.from("meetings").insert({ title, date, location, type: draft?.type === "online" ? "online" : "offline", created_by: user.id, status: "Draft" }).select("id,title,date,location,created_by,status").single();

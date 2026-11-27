@@ -77,6 +77,7 @@ export function MeetingIntelligence({ meetingId, canManage }: { meetingId: strin
       }
       throw new Error("Transcription is taking longer than expected. You can resume it from this page.");
     } catch (e) {
+      setMessage("");
       setError(e instanceof Error ? e.message : "Processing failed.");
       await load().catch((): void => undefined);
     } finally {

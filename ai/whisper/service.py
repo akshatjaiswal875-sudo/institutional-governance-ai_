@@ -11,9 +11,10 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, Header, HTTPException, UploadFile
 
-app = FastAPI(title="Institutional Governance Whisper Worker", version="2.0.0")
+app = FastAPI(title="Institutional Governance Whisper Worker", version="2.1.0")
 MODEL_PATH = os.getenv("WHISPER_MODEL_PATH", "/models/ggml-tiny-q5_1.bin")
 WHISPER_CLI = os.getenv("WHISPER_CLI", "/usr/local/bin/whisper-cli")
+WHISPER_THREADS = max(1, int(os.getenv("WHISPER_THREADS", "1")))
 MAX_UPLOAD_BYTES = int(os.getenv("WHISPER_MAX_UPLOAD_BYTES", str(100 * 1024 * 1024)))
 _jobs: dict[str, dict] = {}
 _jobs_lock = threading.Lock()
@@ -37,33 +38,47 @@ def prune_jobs():
 
 
 def run_transcription(job_id: str, source_path: str, temp_dir: str):
+    job_started = time.monotonic()
     try:
         with _jobs_lock:
             _jobs[job_id]["status"] = "running"
         source = Path(source_path)
         audio_path = Path(temp_dir) / "audio.wav"
         output_prefix = Path(temp_dir) / "transcript"
+
+        ffmpeg_started = time.monotonic()
         subprocess.run(
             ["ffmpeg", "-nostdin", "-y", "-i", str(source), "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", str(audio_path)],
             check=True, capture_output=True, timeout=600,
         )
+        ffmpeg_seconds = time.monotonic() - ffmpeg_started
+        print(f"[whisper-worker] job={job_id} stage=audio_conversion seconds={ffmpeg_seconds:.1f}", flush=True)
+
+        whisper_started = time.monotonic()
         result = subprocess.run(
-            [WHISPER_CLI, "-m", MODEL_PATH, "-f", str(audio_path), "-nt", "-np", "-otxt", "-of", str(output_prefix)],
+            [WHISPER_CLI, "-m", MODEL_PATH, "-f", str(audio_path), "-t", str(WHISPER_THREADS), "-nt", "-np", "-otxt", "-of", str(output_prefix)],
             check=True, capture_output=True, text=True, timeout=3 * 60 * 60,
         )
+        whisper_seconds = time.monotonic() - whisper_started
         transcript_file = Path(f"{output_prefix}.txt")
         transcript = transcript_file.read_text(encoding="utf-8", errors="replace").strip() if transcript_file.exists() else result.stdout.strip()
         if not transcript:
             raise RuntimeError("No speech was detected in this recording.")
+        total_seconds = time.monotonic() - job_started
+        print(f"[whisper-worker] job={job_id} stage=completed whisper_seconds={whisper_seconds:.1f} total_seconds={total_seconds:.1f} threads={WHISPER_THREADS}", flush=True)
         with _jobs_lock:
             _jobs[job_id].update({"status": "completed", "transcript": transcript, "finished_at": time.time()})
     except subprocess.TimeoutExpired:
         with _jobs_lock:
             _jobs[job_id].update({"status": "failed", "error": "Transcription exceeded the worker time limit.", "finished_at": time.time()})
     except subprocess.CalledProcessError as exc:
-        detail = (exc.stderr or b"").decode("utf-8", errors="replace") if isinstance(exc.stderr, bytes) else str(exc.stderr or "")
+        command = Path(str(exc.cmd[0])).name if isinstance(exc.cmd, (list, tuple)) and exc.cmd else "unknown command"
+        raw_detail = exc.stderr or exc.stdout or b""
+        detail = raw_detail.decode("utf-8", errors="replace") if isinstance(raw_detail, bytes) else str(raw_detail)
+        detail = detail.strip() or f"{command} exited with status {exc.returncode} without diagnostic output."
+        print(f"[whisper-worker] job={job_id} command={command} exit={exc.returncode}: {detail[-1500:]}", flush=True)
         with _jobs_lock:
-            _jobs[job_id].update({"status": "failed", "error": detail[-1500:] or "Whisper command failed.", "finished_at": time.time()})
+            _jobs[job_id].update({"status": "failed", "error": f"{command}: {detail[-1200:]}", "finished_at": time.time()})
     except Exception as exc:
         with _jobs_lock:
             _jobs[job_id].update({"status": "failed", "error": str(exc)[:1500], "finished_at": time.time()})

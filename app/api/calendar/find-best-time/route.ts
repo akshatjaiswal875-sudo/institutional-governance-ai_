@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { GoogleGenAI } from "@google/genai";
-import { participantAvailabilityFailure, localWindow } from "@/lib/calendar/scheduler";
+import { buildCandidateMinutes, participantAvailabilityFailure } from "@/lib/calendar/scheduler";
 
 const SEARCH_DAYS = 7;
 const SLOT_STEP_MINUTES = 30;
@@ -146,7 +146,7 @@ export async function POST(request: Request) {
     const nowEpoch = Date.now();
     for (let dayIndex = 0; dayIndex < searchDays; dayIndex += 1) {
       const dateString = addDays(startDate, dayIndex);
-      for (let minutes = WORK_START_MINUTES; minutes + effectiveDuration <= WORK_END_MINUTES; minutes += SLOT_STEP_MINUTES) {
+      for (const minutes of buildCandidateMinutes(effectiveDuration, WORK_START_MINUTES, WORK_END_MINUTES, SLOT_STEP_MINUTES)) {
         const endMinutes = minutes + effectiveDuration; const start = candidateDateTime(dateString, minutes); const end = candidateDateTime(dateString, endMinutes); const startEpoch = start.getTime(); const endEpoch = end.getTime(); if (startEpoch <= nowEpoch) continue;
         candidateSlotsEvaluated += 1;
         let availableCount = 0; let allAvailable = true;

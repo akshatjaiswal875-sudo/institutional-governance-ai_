@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { getFutureEvents } from "@/lib/calendar/upcoming-events";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -54,6 +55,7 @@ export function FancyDashboard() {
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [greetingName, setGreetingName] = useState("User");
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     const supabase = createClient();
@@ -70,12 +72,16 @@ export function FancyDashboard() {
       setEvents(Array.isArray(eventRows) ? eventRows : []);
       setUsers(Array.isArray(userRows) ? userRows : []);
     }).finally(() => setLoading(false));
+
+    // Keep the dashboard's "Upcoming events" window current while it stays open.
+    const clock = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(clock);
   }, []);
 
   const published = meetings.filter((m) => m.status === "Published").length;
   const approved = meetings.filter((m) => m.status === "Approved").length;
   const pending = meetings.filter((m) => m.status === "Pending Approval").length;
-  const upcoming = useMemo(() => [...events].sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()).slice(0, 4), [events]);
+  const upcoming = useMemo(() => getFutureEvents(events, now, 4), [events, now]);
   const recentMeetings = useMemo(() => [...meetings].slice(0, 5), [meetings]);
 
   const metrics = [

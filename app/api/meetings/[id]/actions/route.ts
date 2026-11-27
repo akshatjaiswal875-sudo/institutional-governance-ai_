@@ -29,14 +29,8 @@ export async function POST(request: Request, { params }: { params: { id: string 
     const { data, error } = await admin.from("action_items").insert({ meeting_id: params.id, decision_id: body.decisionId || null, task, assignee_id: assignee.id, due_date: dueDate, priority, status: "Pending", created_by: profile.id }).select("*").single();
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
-    await admin.from("notifications").insert({
-      user_id: assignee.id,
-      type: "task",
-      title: "New task assigned",
-      message: `${profile.email} assigned you: ${task}`,
-      target_table: "action_items",
-      target_id: data.id,
-    });
+    // The action_item_notification_insert database trigger creates the
+    // assignee notification. Avoid inserting a second notification here.
     await recordAudit(admin, profile.id, "ADD_DELEGATED_TASK", "action_items", data.id, { meeting_id: params.id, assignee_id: assignee.id, assignee_email: assignee.email, due_date: dueDate });
     return NextResponse.json({ data: { ...data, assignee } }, { status: 201 });
   } catch (error) {

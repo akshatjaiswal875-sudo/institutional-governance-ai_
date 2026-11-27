@@ -13,32 +13,46 @@ type NotificationRow = {
 };
 
 function getNotificationHref(row: NotificationRow) {
-  if (!row.target_table || !row.target_id) return null;
-  switch (row.target_table) {
-    case "meetings":
-      return `/meetings/${row.target_id}/join`;
-    case "policies":
-      return `/policies/${row.target_id}`;
-    case "action_items":
-      return `/my-workspace?taskId=${row.target_id}`;
-    case "events":
-      return `/events/${row.target_id}`;
-    default:
-      return null;
+  if (row.target_table && row.target_id) {
+    switch (row.target_table) {
+      case "meetings":
+        return `/meetings/${row.target_id}/join`;
+      case "policies":
+        return `/policies/${row.target_id}`;
+      case "action_items":
+        return `/my-workspace?taskId=${row.target_id}`;
+      case "events":
+        return `/events/${row.target_id}`;
+    }
   }
+
+  return null;
 }
 
 export async function GET() {
   try {
     const { supabase, user } = await requireUser();
-    const { data, error } = await supabase
-      .from("notifications")
-      .select("id,type,title,message,target_table,target_id,read_at,created_at")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(100);
+    const [{ data, error }, { count: unreadCount, error: unreadError }, { count: totalCount, error: totalError }] = await Promise.all([
+      supabase
+        .from("notifications")
+        .select("id,type,title,message,target_table,target_id,read_at,created_at")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(100),
+      supabase
+        .from("notifications")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .is("read_at", null),
+      supabase
+        .from("notifications")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id),
+    ]);
 
     if (error) throw error;
+    if (unreadError) throw unreadError;
+    if (totalError) throw totalError;
 
     const notifications = ((data ?? []) as NotificationRow[]).map((row) => ({
       id: row.id,
@@ -50,9 +64,12 @@ export async function GET() {
       created_at: row.created_at,
     }));
 
-    return NextResponse.json({ data: notifications });
+    return NextResponse.json({ data: notifications, unread_count: unreadCount ?? 0, total_count: totalCount ?? 0 }, {
+      headers: { "Cache-Control": "private, no-store, max-age=0" },
+    });
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHORIZED") return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    if (error instanceof Error && error.message === "PROFILE_NOT_FOUND") return NextResponse.json({ error: "User profile not found." }, { status: 403 });
     console.error("GET /api/notifications failed:", error);
     return NextResponse.json({ error: "Unable to load notifications." }, { status: 500 });
   }
@@ -61,21 +78,44 @@ export async function GET() {
 export async function PATCH(request: NextRequest) {
   try {
     const { supabase, user } = await requireUser();
-    const body = await request.json();
+    let body: { id?: unknown; action?: unknown };
+    try {
+      body = await request.json();
+      if (!body || typeof body !== "object" || Array.isArray(body)) {
+        return NextResponse.json({ error: "A JSON object is required." }, { status: 400 });
+      }
+    } catch {
+      return NextResponse.json({ error: "A valid JSON body is required." }, { status: 400 });
+    }
+
+    const readAt = new Date().toISOString();
+    if (body.action === "mark_all_read") {
+      const { data, error } = await supabase
+        .from("notifications")
+        .update({ read_at: readAt })
+        .eq("user_id", user.id)
+        .is("read_at", null)
+        .select("id,read_at");
+      if (error) throw error;
+      return NextResponse.json({ data: data ?? [] });
+    }
+
     const id = typeof body.id === "string" ? body.id : "";
     if (!id) return NextResponse.json({ error: "Notification id is required." }, { status: 400 });
 
     const { data, error } = await supabase
       .from("notifications")
-      .update({ read_at: new Date().toISOString() })
+      .update({ read_at: readAt })
       .eq("id", id)
       .eq("user_id", user.id)
       .select("id,read_at")
-      .single();
+      .maybeSingle();
     if (error) throw error;
+    if (!data) return NextResponse.json({ error: "Notification not found." }, { status: 404 });
     return NextResponse.json({ data });
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHORIZED") return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    if (error instanceof Error && error.message === "PROFILE_NOT_FOUND") return NextResponse.json({ error: "User profile not found." }, { status: 403 });
     console.error("PATCH /api/notifications failed:", error);
     return NextResponse.json({ error: "Unable to update notification." }, { status: 500 });
   }

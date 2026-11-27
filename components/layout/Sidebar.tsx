@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { usePathname } from "next/navigation";
 import {
   BarChart3, Bell, Bot, CalendarDays, ClipboardList, FileText, LayoutDashboard,
   Menu, MessageSquare, Search, ShieldCheck, Users, PanelLeftClose, PanelLeftOpen,
@@ -51,11 +50,6 @@ function isActivePath(pathname: string, href: string): boolean {
 
 export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
   const pathname = usePathname();
-  const router = useRouter();
-
-  useEffect(() => {
-    for (const { href } of sidebarItems) router.prefetch(href);
-  }, [router]);
 
   return (
     <aside className={`hidden h-[calc(100vh-72px)] shrink-0 border-r border-[var(--soft-border)] bg-white/90 backdrop-blur-xl transition-[width] duration-300 ease-out md:sticky md:top-[72px] md:block ${collapsed ? "w-[72px]" : "w-[264px]"}`} aria-label="Primary navigation">
@@ -71,7 +65,7 @@ export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
             {!collapsed && <h2 className="mb-1.5 px-3 text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--muted-text)]">{group.label}</h2>}
             <div className="space-y-1">{group.items.map(({ href, label, icon: Icon }) => {
               const active = isActivePath(pathname, href);
-              return <Link key={href} href={href} onClick={onNavigate} prefetch aria-current={active ? "page" : undefined} title={collapsed ? label : undefined} className={`group flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-semibold transition focus:outline-none focus:ring-2 focus:ring-[var(--primary-main)]/30 ${collapsed ? "justify-center" : ""} ${active ? "bg-blue-50 text-[var(--heading)] ring-1 ring-blue-200/80" : "text-[var(--body-text)] hover:bg-slate-100 hover:text-[var(--heading)]"}`}>
+              return <Link key={href} href={href} onClick={onNavigate} aria-current={active ? "page" : undefined} title={collapsed ? label : undefined} className={`group flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-semibold transition focus:outline-none focus:ring-2 focus:ring-[var(--primary-main)]/30 ${collapsed ? "justify-center" : ""} ${active ? "bg-blue-50 text-[var(--heading)] ring-1 ring-blue-200/80" : "text-[var(--body-text)] hover:bg-slate-100 hover:text-[var(--heading)]"}`}>
                 <Icon size={18} strokeWidth={active ? 2.4 : 2} className={active ? "text-[#1E40AF]" : "text-[var(--muted-text)] group-hover:text-[#1E40AF]"} aria-hidden="true" />
                 {!collapsed && <span className="min-w-0 flex-1 truncate">{label}</span>}
                 {!collapsed && active && <span className="h-1.5 w-1.5 rounded-full bg-[var(--primary-main)]" aria-hidden="true" />}

@@ -37,8 +37,8 @@ export async function GET(request: NextRequest) {
         return LEADERS.includes(profile.role) ? query : query.eq("status", "Published");
       })(),
       admin.from("action_items").select("id,task,due_date,status,assignee_id,created_by,meeting_id").or(`assignee_id.eq.${profile.id},created_by.eq.${profile.id}`).gte("due_date", from.slice(0, 10)).lt("due_date", to.slice(0, 10)).order("due_date"),
-      admin.from("institutional_timetable_entries").select("id,title,starts_at,ends_at,faculty_email,created_by,is_recurring_weekly,weekday,start_time,end_time,room").eq("created_by", profile.id).eq("is_recurring_weekly", false).lt("starts_at", to).gt("ends_at", from),
-      admin.from("institutional_timetable_entries").select("id,title,faculty_email,created_by,is_recurring_weekly,weekday,start_time,end_time,room").eq("created_by", profile.id).eq("is_recurring_weekly", true),
+      admin.from("institutional_timetable_entries").select("id,title,starts_at,ends_at,faculty_email,created_by,is_recurring_weekly,weekday,start_time,end_time,room").ilike("faculty_email", String(profile.email || user.email || "").trim()).eq("is_recurring_weekly", false).lt("starts_at", to).gt("ends_at", from),
+      admin.from("institutional_timetable_entries").select("id,title,faculty_email,created_by,is_recurring_weekly,weekday,start_time,end_time,room").ilike("faculty_email", String(profile.email || user.email || "").trim()).eq("is_recurring_weekly", true),
     ]);
 
     const failed = [meetingResult, eventResult, taskResult, datedTimetableResult, weeklyTimetableResult].find(result => result.error);
@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
     }
     for (const row of datedTimetableResult.data ?? []) items.push({
       id: `timetable:${row.id}`, sourceId: row.id, kind: "timetable", title: row.title || "Class",
-      start: row.starts_at, end: row.ends_at, location: row.room, status: "Scheduled", href: null,
+      start: row.starts_at, end: row.ends_at, location: row.room, status: "Scheduled", href: null, recurring: false,
     });
 
     const firstDay = dateKey(new Date(from));
@@ -78,7 +78,7 @@ export async function GET(request: NextRequest) {
         if (weekday(cursor) === row.weekday) items.push({
           id: `timetable:${row.id}:${cursor}`, sourceId: row.id, kind: "timetable", title: row.title || "Class",
           start: atTime(cursor, row.start_time), end: atTime(cursor, row.end_time), location: row.room,
-          status: "Scheduled", href: null, recurring: true,
+          status: "Scheduled", href: null, recurring: true, weekday: row.weekday, startTime: row.start_time, endTime: row.end_time,
         });
         const next = new Date(`${cursor}T12:00:00${IST}`);
         next.setUTCDate(next.getUTCDate() + 1);

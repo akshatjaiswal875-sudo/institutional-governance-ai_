@@ -27,7 +27,6 @@ export function OnlineMeetingForm() {
   const [participantQuery, setParticipantQuery] = useState("");
   const [participantsLoading, setParticipantsLoading] = useState(true);
   const [participantsError, setParticipantsError] = useState("");
-  const [participantsAdded, setParticipantsAdded] = useState(0);
   const [creationNotice, setCreationNotice] = useState("");
   const [invitationResults, setInvitationResults] = useState<Array<{ email: string; sent: boolean; error?: string }>>([]);
 
@@ -85,7 +84,6 @@ export function OnlineMeetingForm() {
       });
       setCreated(data);
 
-      let added = 0;
       const results: Array<{ email: string; sent: boolean; error?: string }> = [];
       for (const userId of selectedParticipantIds) {
         const participantEmail = participantOptions.find(option => option.id === userId)?.email ?? userId;
@@ -97,7 +95,6 @@ export function OnlineMeetingForm() {
           });
           const result = await response.json();
           if (!response.ok) throw new Error(result.error ?? "Unable to add participant.");
-          added += 1;
 
           const invitationResponse = await fetch(`/api/meetings/${data.id}/participants/invite`, {
             method: "POST",
@@ -117,7 +114,6 @@ export function OnlineMeetingForm() {
           });
         }
       }
-      setParticipantsAdded(added);
       setInvitationResults(results);
       const sent = results.filter(result => result.sent).length;
       const failed = results.length - sent;

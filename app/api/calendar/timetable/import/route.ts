@@ -187,6 +187,24 @@ export async function POST(request: Request) {
       });
     }
 
+    if (!ownEmail) return NextResponse.json({ error: "Your institutional profile does not have an email address. Contact the administrator." }, { status: 403 });
+
+    // Never replace a previously saved timetable with a partially parsed file.
+    // Exact duplicate rows are rejected as well, rather than silently duplicated.
+    const rowKeys = new Set<string>();
+    for (const row of valid) {
+      const duplicateKey = JSON.stringify([
+        row.title, row.is_recurring_weekly, row.weekday, row.start_time, row.end_time,
+        row.starts_at, row.ends_at, row.room,
+      ]);
+      if (rowKeys.has(duplicateKey)) errors.push("Duplicate timetable entry detected in the uploaded file.");
+      rowKeys.add(duplicateKey);
+    }
+    if (errors.length) return NextResponse.json({
+      error: "The timetable contains invalid or duplicate rows. No existing timetable data was changed. Correct the file and upload it again.",
+      rowErrors: errors.slice(0, 20),
+    }, { status: 422 });
+
     if (!valid.length) return NextResponse.json({
       error: weekly.recognized ? "No class periods were found in the weekly timetable. Check the Day and Time header rows." : "No valid timetable rows were found.",
       rowErrors: errors.slice(0, 20),

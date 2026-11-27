@@ -54,7 +54,7 @@ export async function POST(request: Request) {
           director: "Director", principal: "Principal", "super admin": "Super Admin",
           "meeting secretary": "Meeting Secretary", coordinator: "Coordinators", coordinators: "Coordinators",
         };
-        const roleAndDepartment = q.match(/^(hods?|heads? of department|facult(?:y|ies))(?:\\s+(?:of|from|in)\\s+(.+))?$/i);
+        const roleAndDepartment = q.match(/^(hods?|heads? of department|facult(?:y|ies))(?:\s+(?:of|from|in)\s+(.+))?$/i);
         const requestedRole = roleAliases[q.toLowerCase()] ?? (roleAndDepartment ? roleAliases[roleAndDepartment[1].toLowerCase()] : null);
         const requestedDepartment = roleAndDepartment?.[2]?.trim() ?? "";
         if (requestedRole) {

@@ -4,8 +4,6 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { recordAudit } from "@/lib/audit";
 import { sendMeetingInvitation } from "@/lib/invitations";
 
-const USER_ROLES = ["Super Admin", "Director", "Principal", "HOD", "Coordinators", "Meeting Secretary", "Faculty / Officer", "Member", "Auditor"] as const;
-type UserRole = (typeof USER_ROLES)[number];
 function clean(value: unknown) { return typeof value === "string" ? value.trim() : ""; }
 function parseMeetingRequest(message: string) {
   const lower = message.toLowerCase();
@@ -36,8 +34,6 @@ function parseMeetingRequest(message: string) {
     windowHint: nextWeek ? "next_week" : "next_7_days",
   };
 }
-function ilikePattern(value: string) { return `%${value.replace(/[\\%_]/g, (char) => `\\${char}`)}%`; }
-function asRole(value: string): UserRole | null { return (USER_ROLES as readonly string[]).includes(value) ? value as UserRole : null; }
 
 export async function POST(request: Request) {
   try {

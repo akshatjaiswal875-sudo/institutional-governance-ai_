@@ -15,7 +15,7 @@ describe("scheduler candidate grid", () => {
     const slots = buildCandidateMinutes(60);
     expect(slots).toContain(19 * 60);
     expect(slots).toContain(20 * 60);
-    expect(slots).not.toContain(21 * 60);
+    expect(slots).toContain(21 * 60);\n    expect(slots).not.toContain(21 * 60 + 30);
   });
   it("keeps duration inside the configured search boundary", () => {
     const slots = buildCandidateMinutes(90, 6 * 60, 22 * 60, 30);

@@ -31,7 +31,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
       if (error) throw error;
       users = data ?? [];
     }
-    return NextResponse.json({ data: { users, departments, currentRole: profile.role, currentUserId: profile.id } });
+    return NextResponse.json({ data: { users, departments, currentRole: profile.role, currentUserId: profile.id, currentDepartment: profile.department } });
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHORIZED") return NextResponse.json({ error: "Authentication required." }, { status: 401 });
     if (error instanceof Error && error.message === "FORBIDDEN") return NextResponse.json({ error: "You do not have permission to view assignment options." }, { status: 403 });

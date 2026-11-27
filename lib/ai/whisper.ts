@@ -8,21 +8,21 @@ type WhisperJob = {
 function workerUrl(path: string) {
   const configured = process.env.WHISPER_WORKER_URL?.trim();
   if (!configured) throw new Error("Whisper worker is not configured. Set WHISPER_WORKER_URL in Vercel.");
-  const base = configured.replace(/\\/transcribe\\/?$/, "").replace(/\\/$/, "");
-  return `${base}${path}`;
+  const base = configured.replace(/\/transcribe\/?$/, "").replace(/\/$/, "");
+  return \`${base}${path}\`;
 }
 
 function workerHeaders(): HeadersInit {
   const token = process.env.WHISPER_WORKER_TOKEN?.trim();
   if (!token) throw new Error("WHISPER_WORKER_TOKEN is not configured in Vercel.");
-  return { Authorization: `Bearer ${token}` };
+  return { Authorization: \`Bearer \${token}\` };
 }
 
 async function parseWorkerResponse<T>(response: Response): Promise<T> {
   const contentType = response.headers.get("content-type") || "";
-  if (!contentType.includes("application/json")) throw new Error(`Whisper worker returned an invalid response (${response.status}).`);
+  if (!contentType.includes("application/json")) throw new Error(\`Whisper worker returned an invalid response (\${response.status}).\`);
   const payload = await response.json() as T & { detail?: string; error?: string };
-  if (!response.ok) throw new Error(payload.detail || payload.error || `Whisper worker request failed (${response.status}).`);
+  if (!response.ok) throw new Error(payload.detail || payload.error || \`Whisper worker request failed (\${response.status}).\`);
   return payload;
 }
 
@@ -39,7 +39,7 @@ export async function startWhisperJob(file: File): Promise<WhisperJob> {
 }
 
 export async function getWhisperJob(jobId: string): Promise<WhisperJob> {
-  const response = await fetch(workerUrl(`/jobs/${encodeURIComponent(jobId)}`), {
+  const response = await fetch(workerUrl(\`/jobs/\${encodeURIComponent(jobId)}\`), {
     method: "GET",
     headers: workerHeaders(),
     cache: "no-store",

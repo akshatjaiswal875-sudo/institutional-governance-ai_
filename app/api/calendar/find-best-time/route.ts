@@ -104,7 +104,7 @@ export async function POST(request: Request) {
     // Department matching is used only for genuinely department-wide rows.
     const matchesUser = (row: TimetableRow, user: UserRow) => {
       if (row.faculty_email) return user.email.toLowerCase() === String(row.faculty_email).trim().toLowerCase();
-      return Boolean(row.department && user.department?.toLowerCase() === String(row.department).trim().toLowerCase());
+      return Boolean(row.department && user.department?.trim().toLowerCase() === String(row.department).trim().toLowerCase());
     };
     const datedTimetableBusy: BusyItem[] = ((timetableRows ?? []) as TimetableRow[]).flatMap(row => {
       if (!row.starts_at || !row.ends_at) return [];

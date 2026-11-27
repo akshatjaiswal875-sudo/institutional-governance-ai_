@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isParticipantAvailable, type AvailabilityRow, type BusyItem, type PreferenceRow, type UnavailabilityRow } from "@/lib/calendar/scheduler";
+import { buildCandidateMinutes, isParticipantAvailable, type AvailabilityRow, type BusyItem, type PreferenceRow, type UnavailabilityRow } from "@/lib/calendar/scheduler";
 
 const recurringIndia: AvailabilityRow[] = [{ user_id: "fixture-india", day_of_week: 1, start_time: "19:00", end_time: "21:00", available: true }];
 const recurringNewYork: AvailabilityRow[] = [{ user_id: "fixture-ny", day_of_week: 1, start_time: "09:00", end_time: "12:00", available: true }];
@@ -9,6 +9,24 @@ const newYork: PreferenceRow = { ...india, user_id: "fixture-ny", timezone: "Ame
 const start = Date.parse("2026-11-16T14:00:00.000Z");
 const end = start + 60 * 60_000;
 const defaultPreference: PreferenceRow = { ...india, preferred_start_time: null, preferred_end_time: null };
+
+describe("scheduler candidate grid", () => {
+  it("includes valid saved windows after 5 PM", () => {
+    const slots = buildCandidateMinutes(60);
+    expect(slots).toContain(19 * 60);
+    expect(slots).toContain(20 * 60);
+    expect(slots).not.toContain(21 * 60);
+  });
+  it("keeps duration inside the configured search boundary", () => {
+    const slots = buildCandidateMinutes(90, 6 * 60, 22 * 60, 30);
+    expect(slots.at(-1)).toBe(20 * 60 + 30);
+    expect(slots.at(-1)! + 90).toBe(22 * 60);
+  });
+  it("rejects invalid candidate-grid inputs", () => {
+    expect(buildCandidateMinutes(0)).toEqual([]);
+    expect(buildCandidateMinutes(60, 22 * 60, 6 * 60)).toEqual([]);
+  });
+});
 
 describe("scheduler participant constraints (isolated fixtures)", () => {
   it("accepts a recurring slot across two participant timezones", () => {

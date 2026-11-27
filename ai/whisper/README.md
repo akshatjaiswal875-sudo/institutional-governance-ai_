@@ -1,42 +1,53 @@
-# Whisper transcription worker
+---
 
-This service runs `faster-whisper` outside Vercel and exposes an authenticated HTTP transcription endpoint.
+# Free CPU Whisper transcription worker
 
-## Deploy on Render
+This worker runs **whisper.cpp** with the multilingual `tiny-q5_1` model. The model weights are downloaded into the Docker image at build time; transcription runs locally on the worker CPU. It does not call Hugging Face Inference Providers or any paid transcription API.
 
-Create a Docker web service from this repository with:
+## Free-tier trade-offs
 
+The repository is configured for a Render Free web service:
+- 0.1 CPU and 512 MB RAM.
+- Spins down after 15 minutes without inbound traffic and takes about a minute to wake.
+- Free instance hours are shared across the Render workspace (750 hours/month).
+- The tiny quantized model is intentionally selected to fit a very small machine. Accuracy is lower than Whisper small/large-v3, and long recordings can take a long time on 0.1 CPU.
+- Render describes Free services as suitable for testing and hobby projects, not production guarantees.
+
+If you need higher throughput or production reliability, the honest options are a more powerful machine or a different free compute source you control. Do not upgrade the Render plan for this setup.
+
+## Deploy as a free Render web service
+
+Create a **new Web Service** from this same GitHub repository:
+- Name: `institutional-governance-whisper`
+- Branch: `main` after merging this pull request
+- Runtime: Docker
 - Dockerfile path: `ai/whisper/Dockerfile`
-- Docker context: repository root (`.`)
+- Docker context / root directory: repository root
+- Region: Singapore
+- Instance type: Free
 - Health check path: `/health`
-- Region: Singapore (closest available region for India)
-- Plan: at least 1 CPU / 2 GB RAM is recommended for the `small` model. Free instances may sleep and are not recommended for production latency.
 
-Set these worker environment variables:
+Add this secret environment variable in the worker service:
+- `WHISPER_WORKER_TOKEN`: generate a long random value (at least 32 characters). Do not commit it or share it in chat.
 
-- `WHISPER_WORKER_TOKEN`: a long random secret shared only with the Next.js production app.
-- `WHISPER_MODEL`: `small` (default; use `base` for lower memory/latency).
-- `WHISPER_DEVICE`: `cpu`
-- `WHISPER_COMPUTE_TYPE`: `int8`
+The worker's health endpoint is `/health`. It accepts `POST /transcribe` with multipart field `file`, returns a job ID immediately, and exposes job state at `GET /jobs/{job_id}`. Both endpoints require `Authorization: Bearer <token>`.
 
-The worker exposes `POST /transcribe` with multipart field `file` and header `Authorization: Bearer <token>`. It returns JSON `{"transcript":"..."}`. The unauthenticated `GET /health` endpoint is intended for service health checks.
+## Configure the Vercel app
 
-## Configure the Next.js app
+In Vercel → Project → Settings → Environment Variables → Production, set:
+- `WHISPER_WORKER_URL`: `https://YOUR-WORKER.onrender.com/transcribe`
+- `WHISPER_WORKER_TOKEN`: the exact same random token configured on Render.
 
-Set these Vercel Production environment variables:
+Redeploy the Vercel application after setting these values.
 
-- `WHISPER_WORKER_URL`: the worker URL ending in `/transcribe`.
-- `WHISPER_WORKER_TOKEN`: the same token configured on Render.
-- `WHISPER_MODEL`: `small` (must match the worker model selection).
+The app stores the worker job ID on the meeting recording, polls asynchronously, and resumes polling after a page refresh. The worker itself holds job state in memory; if Render restarts while a job is running, retry that recording.
 
-When `WHISPER_WORKER_URL` is configured, the app uses this worker before considering Hugging Face. The Hugging Face inference key is no longer needed for transcription.
+## Local worker development
 
-## Local development
-
-Install `ai/whisper/requirements.txt`, install ffmpeg, then run:
+Install the packages in `requirements.txt`, install `ffmpeg`, and ensure `whisper-cli` plus the `ggml-tiny-q5_1.bin` model are available. Then run:
 
 ```bash
 WHISPER_WORKER_TOKEN=replace-me uvicorn service:app --app-dir ai/whisper --host 127.0.0.1 --port 8000
 ```
 
-Audio and temporary video files are removed after processing. The worker never stores uploaded recordings.
+Uploaded audio/video is written to a temporary directory and deleted after processing. The worker stores only job state and transcript text in memory.

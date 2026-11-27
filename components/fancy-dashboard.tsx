@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { getFutureEvents } from "@/lib/calendar/upcoming-events";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -80,22 +81,7 @@ export function FancyDashboard() {
   const published = meetings.filter((m) => m.status === "Published").length;
   const approved = meetings.filter((m) => m.status === "Approved").length;
   const pending = meetings.filter((m) => m.status === "Pending Approval").length;
-  const upcoming = useMemo(() => events
-    .filter((event) => {
-      const startTime = Date.parse(event.start_time);
-      const status = String(event.status ?? "").toLowerCase();
-      if (!Number.isFinite(startTime) || status === "cancelled" || status === "completed") return false;
-
-      // Include events happening now as well as events that have not started.
-      // For an ongoing event without an end time, retain it until its status changes.
-      const endTime = event.end_time
-        ? Date.parse(event.end_time)
-        : status === "ongoing" ? Number.POSITIVE_INFINITY : startTime;
-
-      return Number.isFinite(endTime) ? endTime > now : status === "ongoing";
-    })
-    .sort((a, b) => Date.parse(a.start_time) - Date.parse(b.start_time))
-    .slice(0, 4), [events, now]);
+  const upcoming = useMemo(() => getFutureEvents(events, now, 4), [events, now]);
   const recentMeetings = useMemo(() => [...meetings].slice(0, 5), [meetings]);
 
   const metrics = [

@@ -89,8 +89,10 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     await recordAudit(supabase, profile.id, requestedStatus === "Published" ? "FINAL_PUBLISH_EVENT" : "UPDATE_EVENT", "events", params.id, { role: profile.role, status: requestedStatus });
     return NextResponse.json({ data });
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Unable to update event.";
     console.error("[events] update failed", error);
-    return NextResponse.json({ error: "Unable to update event." }, { status: 400 });
+    const status = message === "FORBIDDEN" ? 403 : message === "UNAUTHORIZED" ? 401 : 400;
+    return NextResponse.json({ error: status === 403 ? "You are not allowed to edit events." : status === 401 ? "Authentication required." : "Unable to update event." }, { status });
   }
 }
 

@@ -193,16 +193,21 @@ export async function POST(request: Request) {
     }, { status: 422 });
 
     const rowsToInsert = valid.map(row => ({ ...row, department: row.department ?? targetDepartment, faculty_email: targetEmail || null, created_by: user.id }));
-    const { data, error } = await admin.from("institutional_timetable_entries").insert(rowsToInsert).select("id");
+    const { data, error } = await admin.rpc("replace_faculty_timetable", {
+      p_faculty_email: targetEmail,
+      p_uploader_id: user.id,
+      p_rows: rowsToInsert,
+    });
     if (error) throw error;
+    const importedCount = Number(data?.imported ?? 0);
     return NextResponse.json({
-      imported: data?.length ?? 0,
+      imported: importedCount,
       skipped: errors.length,
       rowErrors: errors.slice(0, 20),
       source: file.name,
       format: mode,
       owner: targetEmail,
-      message: mode === "weekly" ? `Weekly recurring timetable imported for ${targetEmail}. It will be used for this faculty account in future scheduling searches.` : "Dated timetable imported.",
+      message: `Previous timetable for ${targetEmail} was replaced with ${importedCount} validated ${mode} entries.`,
     }, { status: 201 });
   } catch (error) {
     console.error("[calendar/timetable/import]", error);

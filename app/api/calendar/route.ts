@@ -37,8 +37,8 @@ export async function GET(request: NextRequest) {
         return LEADERS.includes(profile.role) ? query : query.eq("status", "Published");
       })(),
       admin.from("action_items").select("id,task,due_date,status,assignee_id,created_by,meeting_id").or(`assignee_id.eq.${profile.id},created_by.eq.${profile.id}`).gte("due_date", from.slice(0, 10)).lt("due_date", to.slice(0, 10)).order("due_date"),
-      admin.from("institutional_timetable_entries").select("id,title,starts_at,ends_at,faculty_email,created_by,is_recurring_weekly,weekday,start_time,end_time,room").eq("created_by", profile.id).eq("is_recurring_weekly", false).lt("starts_at", to).gt("ends_at", from),
-      admin.from("institutional_timetable_entries").select("id,title,faculty_email,created_by,is_recurring_weekly,weekday,start_time,end_time,room").eq("created_by", profile.id).eq("is_recurring_weekly", true),
+      admin.from("institutional_timetable_entries").select("id,title,starts_at,ends_at,faculty_email,created_by,is_recurring_weekly,weekday,start_time,end_time,room").ilike("faculty_email", String(profile.email || user.email || "").trim()).eq("is_recurring_weekly", false).lt("starts_at", to).gt("ends_at", from),
+      admin.from("institutional_timetable_entries").select("id,title,faculty_email,created_by,is_recurring_weekly,weekday,start_time,end_time,room").ilike("faculty_email", String(profile.email || user.email || "").trim()).eq("is_recurring_weekly", true),
     ]);
 
     const failed = [meetingResult, eventResult, taskResult, datedTimetableResult, weeklyTimetableResult].find(result => result.error);

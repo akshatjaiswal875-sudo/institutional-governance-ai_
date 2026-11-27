@@ -16,7 +16,8 @@ export async function generateWithGemini(prompt: string, options?: { json?: bool
   if (!apiKey) throw new Error("GEMINI_API_KEY is missing.");
 
   const configuredModel = (process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL).replace(/^models\//, "");
-  // Do not retry a retired model after the configured model fails. That hid the real error in production logs.\n  const modelsToTry = [configuredModel];
+  // Do not retry a retired model after the configured model fails. That hid the real error in production logs.
+  const modelsToTry = [configuredModel];
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 45_000);
   try {

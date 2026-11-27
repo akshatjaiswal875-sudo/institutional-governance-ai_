@@ -120,6 +120,31 @@ export async function POST(request: Request) {
     const { user, profile } = await requireUser();
     const form = await request.formData();
     const file = form.get("file");
+    const requestedFacultyEmail = String(form.get("facultyEmail") ?? "").trim().toLowerCase();
+    const ownEmail = String(profile.email || user.email || "").trim().toLowerCase();
+    const isInstitutionAdmin = ["Super Admin", "Director"].includes(String(profile.role));
+    const isHod = String(profile.role) === "HOD";
+    const admin = createAdminClient();
+    let targetEmail = ownEmail;
+    let targetDepartment = profile.department ?? null;
+
+    if (requestedFacultyEmail && requestedFacultyEmail !== ownEmail) {
+      if (!isInstitutionAdmin && !isHod) {
+        return NextResponse.json({ error: "Only a Director, Super Admin, or HOD can upload a timetable for another faculty member." }, { status: 403 });
+      }
+      const { data: target, error: targetError } = await admin
+        .from("users")
+        .select("id,email,role,department")
+        .eq("email", requestedFacultyEmail)
+        .maybeSingle();
+      if (targetError) throw targetError;
+      if (!target?.email) return NextResponse.json({ error: "No institutional user was found with that faculty email." }, { status: 404 });
+      if (isHod && !isInstitutionAdmin && (!profile.department || !target.department || String(target.department).trim().toLowerCase() !== String(profile.department).trim().toLowerCase())) {
+        return NextResponse.json({ error: "An HOD can upload timetables only for faculty in their own department." }, { status: 403 });
+      }
+      targetEmail = String(target.email).trim().toLowerCase();
+      targetDepartment = target.department ?? null;
+    }
     if (!(file instanceof File)) return NextResponse.json({ error: "Upload an .xlsx, .xls, or .csv timetable file." }, { status: 400 });
     if (file.size > 10 * 1024 * 1024) return NextResponse.json({ error: "Timetable file must be 10 MB or smaller." }, { status: 413 });
     const extension = file.name.split(".").pop()?.toLowerCase();
@@ -131,7 +156,7 @@ export async function POST(request: Request) {
     const matrix = XLSX.utils.sheet_to_json<unknown[]>(firstSheet, { header: 1, defval: "", raw: true });
     if (!matrix.length) return NextResponse.json({ error: "The first worksheet contains no timetable rows." }, { status: 400 });
 
-    const weekly = parseWeeklyMatrix(matrix, profile.email || user.email || "", file.name);
+    const weekly = parseWeeklyMatrix(matrix, targetEmail, file.name);
     let valid = weekly.valid;
     const errors = weekly.errors;
     let mode: "weekly" | "dated" = "weekly";
@@ -155,7 +180,7 @@ export async function POST(request: Request) {
           starts_at: startsAt.toISOString(), ends_at: endsAt.toISOString(),
           is_recurring_weekly: false, weekday: null, start_time: null, end_time: null,
           department: String(find(row, ["department", "branch", "course"]) ?? "").trim() || null,
-          faculty_email: String(find(row, ["faculty email", "email", "faculty"]) ?? profile.email ?? user.email ?? "").trim().toLowerCase() || null,
+          faculty_email: targetEmail || null,
           room: String(find(row, ["room", "venue", "classroom"]) ?? "").trim() || null,
           source_filename: file.name,
         });
@@ -167,8 +192,7 @@ export async function POST(request: Request) {
       rowErrors: errors.slice(0, 20),
     }, { status: 422 });
 
-    const admin = createAdminClient();
-    const rowsToInsert = valid.map(row => ({ ...row, created_by: user.id }));
+    const rowsToInsert = valid.map(row => ({ ...row, department: row.department ?? targetDepartment, faculty_email: targetEmail || null, created_by: user.id }));
     const { data, error } = await admin.from("institutional_timetable_entries").insert(rowsToInsert).select("id");
     if (error) throw error;
     return NextResponse.json({
@@ -177,8 +201,8 @@ export async function POST(request: Request) {
       rowErrors: errors.slice(0, 20),
       source: file.name,
       format: mode,
-      owner: profile.email || user.email,
-      message: mode === "weekly" ? "Weekly recurring timetable imported. It will be used for this faculty account in future scheduling searches." : "Dated timetable imported.",
+      owner: targetEmail,
+      message: mode === "weekly" ? `Weekly recurring timetable imported for ${targetEmail}. It will be used for this faculty account in future scheduling searches.` : "Dated timetable imported.",
     }, { status: 201 });
   } catch (error) {
     console.error("[calendar/timetable/import]", error);

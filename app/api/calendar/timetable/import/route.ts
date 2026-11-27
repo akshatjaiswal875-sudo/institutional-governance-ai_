@@ -135,11 +135,11 @@ export async function POST(request: Request) {
       const { data: target, error: targetError } = await admin
         .from("users")
         .select("id,email,role,department")
-        .ilike("email", requestedFacultyEmail)
+        .eq("email", requestedFacultyEmail)
         .maybeSingle();
       if (targetError) throw targetError;
       if (!target?.email) return NextResponse.json({ error: "No institutional user was found with that faculty email." }, { status: 404 });
-      if (isHod && !isInstitutionAdmin && String(target.department ?? "").trim().toLowerCase() !== String(profile.department ?? "").trim().toLowerCase()) {
+      if (isHod && !isInstitutionAdmin && (!profile.department || !target.department || String(target.department).trim().toLowerCase() !== String(profile.department).trim().toLowerCase())) {
         return NextResponse.json({ error: "An HOD can upload timetables only for faculty in their own department." }, { status: 403 });
       }
       targetEmail = String(target.email).trim().toLowerCase();
@@ -202,7 +202,7 @@ export async function POST(request: Request) {
       source: file.name,
       format: mode,
       owner: targetEmail,
-      message: mode === "weekly" ? "Weekly recurring timetable imported for ${targetEmail}. It will be used for this faculty account in future scheduling searches." : "Dated timetable imported.",
+      message: mode === "weekly" ? `Weekly recurring timetable imported for ${targetEmail}. It will be used for this faculty account in future scheduling searches.` : "Dated timetable imported.",
     }, { status: 201 });
   } catch (error) {
     console.error("[calendar/timetable/import]", error);

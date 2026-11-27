@@ -16,18 +16,24 @@ function ago(value: string) {
 export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [rows, setRows] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [busy, setBusy] = useState(false);
-  const unread = rows.filter(row => !row.read_at).length;
+  const unread = unreadCount;
 
   async function refresh() {
     try {
       const response = await fetch("/api/notifications", { credentials: "include", cache: "no-store" });
       const payload = await response.json();
-      if (response.ok && Array.isArray(payload.data)) setRows(payload.data);
+      if (response.ok && Array.isArray(payload.data)) {
+        setRows(payload.data);
+        setUnreadCount(Number(payload.unread_count) || 0);
+      }
     } catch { /* Keep the last known notification state visible. */ }
   }
   async function markRead(id: string) {
+    const existing = rows.find(row => row.id === id);
     setRows(current => current.map(row => row.id === id ? { ...row, read_at: new Date().toISOString() } : row));
+    if (existing && !existing.read_at) setUnreadCount(current => Math.max(0, current - 1));
     try {
       const response = await fetch("/api/notifications", { method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
       if (!response.ok) throw new Error("Unable to mark notification as read.");
@@ -52,6 +58,7 @@ export function NotificationBell() {
         ...row,
         read_at: readAtById.get(row.id) || new Date().toISOString(),
       }));
+      setUnreadCount(0);
     } catch {
       await refresh();
     } finally {

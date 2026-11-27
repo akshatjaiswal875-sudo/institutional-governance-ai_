@@ -16,7 +16,7 @@ import {
 
 type Notification = {
   id: string;
-  type: "info" | "meeting" | "event" | "policy" | "action" | "task" | "system";
+  type: "info" | "meeting" | "event" | "policy" | "action" | "task" | "system" | "approval";
   title: string;
   message: string;
   href?: string | null;
@@ -31,6 +31,7 @@ const icons = {
   action: ListChecks,
   task: ListChecks,
   system: Settings2,
+  approval: CheckCheck,
   info: Info,
 };
 

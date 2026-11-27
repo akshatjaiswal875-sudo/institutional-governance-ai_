@@ -85,6 +85,9 @@ async def transcribe(file: UploadFile = File(...), authorization: str | None = H
     if suffix not in allowed:
         raise HTTPException(status_code=415, detail="Unsupported audio/video format.")
     prune_jobs()
+    with _jobs_lock:
+        if any(job.get("status") in {"queued", "running"} for job in _jobs.values()):
+            raise HTTPException(status_code=429, detail="The free CPU worker is already processing another recording. Please retry in a few minutes.")
     temp_dir = tempfile.mkdtemp(prefix="governance-whisper-")
     source_path = str(Path(temp_dir) / filename)
     total = 0

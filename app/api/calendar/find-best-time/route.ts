@@ -139,11 +139,13 @@ export async function POST(request: Request) {
     for (const row of availability ?? []) { const list = availabilityByUser.get(row.user_id) ?? []; list.push(row); availabilityByUser.set(row.user_id, list); }
     const candidates: Candidate[] = [];
     const rejectionCounts: Record<string, number> = {};
+    let candidateSlotsEvaluated = 0;
     const nowEpoch = Date.now();
     for (let dayIndex = 0; dayIndex < searchDays; dayIndex += 1) {
       const dateString = addDays(startDate, dayIndex); const weekday = weekdayOneToSeven(dateString);
       for (let minutes = WORK_START_MINUTES; minutes + effectiveDuration <= WORK_END_MINUTES; minutes += SLOT_STEP_MINUTES) {
         const endMinutes = minutes + effectiveDuration; const start = candidateDateTime(dateString, minutes); const end = candidateDateTime(dateString, endMinutes); const startEpoch = start.getTime(); const endEpoch = end.getTime(); if (startEpoch <= nowEpoch) continue;
+        candidateSlotsEvaluated += 1;
         let availableCount = 0; let allAvailable = true;
         for (const user of users) {
           const preference = effectivePreferences.get(user.id)!;
@@ -166,7 +168,7 @@ export async function POST(request: Request) {
     const ranked = await rankWithAI(candidates, users);
     const sorted = ranked.candidates.slice(0, 10);
     const [recommended, ...alternatives] = sorted;
-    return NextResponse.json({ data: { recommended: recommended ?? null, alternatives, provider: ranked.provider, searchedFrom: startDate, searchedUntil: endDate, searchWindow, durationMinutes: effectiveDuration, participantCount: users.length, participants: users.map(user => ({ id: user.id, email: user.email, role: user.role, department: user.department })), diagnostics: { candidateSlotsEvaluated: Object.values(rejectionCounts).reduce((sum, count) => sum + count, 0) / Math.max(1, users.length), rejectionCounts } } });
+    return NextResponse.json({ data: { recommended: recommended ?? null, alternatives, provider: ranked.provider, searchedFrom: startDate, searchedUntil: endDate, searchWindow, durationMinutes: effectiveDuration, participantCount: users.length, participants: users.map(user => ({ id: user.id, email: user.email, role: user.role, department: user.department })), diagnostics: { candidateSlotsEvaluated, rejectionCounts } } });
   } catch (error) {
     console.error("find-best-time error", error);
     return NextResponse.json({ error: "Unable to calculate meeting availability." }, { status: 500 });

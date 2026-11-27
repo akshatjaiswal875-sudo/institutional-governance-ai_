@@ -24,7 +24,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
     const requestedRole = url.searchParams.get("role")?.trim() ?? "";
     const role: AssignableRole | undefined = ASSIGNABLE_ROLES.find(item => item === requestedRole);
     let users: Array<{ id: string; email: string; role: string; department: string | null }> = [];
-    const needsDepartment = role === "HOD" || role === "Faculty / Officer" || role === "Faculty";
+    const needsDepartment = role === "HOD" || role === "Faculty / Officer";
     if (role && (!needsDepartment || department)) {
       let query = admin.from("users").select("id,email,role,department").eq("role", role).order("email").limit(100);
       if (needsDepartment) query = query.eq("department", department);

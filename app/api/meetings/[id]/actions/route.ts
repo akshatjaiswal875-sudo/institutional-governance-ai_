@@ -4,7 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { recordAudit } from "@/lib/audit";
 import { canManageMeeting } from "@/lib/meeting-permissions";
 
-const DEPARTMENT_ROLES = ["HOD", "Faculty / Officer", "Faculty"] as const;
+const DEPARTMENT_ROLES = ["HOD", "Faculty / Officer"] as const;
 const INSTITUTIONAL_ROLES = ["Director", "Principal", "Super Admin", "Meeting Secretary", "Coordinators", "Coordinator"] as const;
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {

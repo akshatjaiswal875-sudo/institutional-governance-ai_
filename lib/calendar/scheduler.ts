@@ -53,3 +53,24 @@ export function isParticipantAvailable(input: {
 }) {
   return participantAvailabilityFailure(input) === null;
 }
+
+/**
+ * Candidate grid is intentionally wider than the default working-hours policy.
+ * Saved participant windows can be outside 09:00–17:00; each candidate is
+ * subsequently checked against every participant's local availability.
+ */
+export function buildCandidateMinutes(
+  durationMinutes: number,
+  startMinutes = 6 * 60,
+  endMinutes = 22 * 60,
+  stepMinutes = 30,
+): number[] {
+  if (![durationMinutes, startMinutes, endMinutes, stepMinutes].every(Number.isFinite)
+    || durationMinutes <= 0 || stepMinutes <= 0 || startMinutes < 0
+    || endMinutes > 24 * 60 || startMinutes >= endMinutes) return [];
+  const slots: number[] = [];
+  for (let minute = startMinutes; minute + durationMinutes <= endMinutes; minute += stepMinutes) {
+    slots.push(minute);
+  }
+  return slots;
+}

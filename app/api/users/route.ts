@@ -29,21 +29,41 @@ export async function GET() {
     // returning just the current Super Admin's own row.
     await requireUser([...USER_ADMINS]);
     const admin = createAdminClient();
-    const { data, error, count } = await admin
-      .from("users")
-      .select("id,email,role,department,created_at", { count: "exact" })
-      .order("created_at", { ascending: true });
+    // Supabase projects may cap a single response (commonly 1,000 rows).
+    // Page through the directory so institutions with larger user bases do
+    // not silently see only the first response page.
+    const pageSize = 500;
+    const allUsers: Array<{
+      id: string;
+      email: string;
+      role: string;
+      department: string | null;
+      created_at: string;
+    }> = [];
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await admin
+        .from("users")
+        .select("id,email,role,department,created_at")
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, from + pageSize - 1);
 
-    if (error) {
-      console.error("[api/users] Failed to list institutional users", {
-        code: error.code,
-        message: error.message,
-      });
-      return NextResponse.json({ error: "Unable to load users." }, { status: 500 });
+      if (error) {
+        console.error("[api/users] Failed to list institutional users", {
+          code: error.code,
+          message: error.message,
+          offset: from,
+        });
+        return NextResponse.json({ error: "Unable to load users." }, { status: 500 });
+      }
+
+      const page = data ?? [];
+      allUsers.push(...page);
+      if (page.length < pageSize) break;
     }
 
     return NextResponse.json(
-      { data: data ?? [], count: count ?? data?.length ?? 0 },
+      { data: allUsers, count: allUsers.length },
       { headers: { "Cache-Control": "private, no-store, max-age=0" } },
     );
   } catch (error) {

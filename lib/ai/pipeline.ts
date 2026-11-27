@@ -1,6 +1,5 @@
 import { summarizeWithHuggingFace, extractActionsWithHuggingFace, answerWithHuggingFace } from '@/lib/ai/huggingface';
 import { generateWithGemini, isGeminiConfigured, parseGeminiJson } from '@/lib/ai/gemini';
-import { transcribeLocalAudio } from '@/lib/ai/whisper';
 import { withRetry } from '@/lib/ai/openai';
 import type { AISummary, AIActionItem } from '@/types/domain';
 import OpenAI from 'openai';
@@ -130,5 +129,3 @@ export async function answerMeetingQuestion(context: string, question: string) {
     async () => answerWithHuggingFace(context, question),
   );
 }
-
-export async function transcribe(file: File) { return transcribeLocalAudio(file); }

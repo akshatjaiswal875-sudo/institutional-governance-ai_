@@ -54,6 +54,9 @@ async function transcribeViaHuggingFace(file: File): Promise<string> {
     if (!response.ok) {
       let detail = `Hugging Face Whisper failed (${response.status}).`;
       try { const parsed = JSON.parse(bodyText) as { error?: string }; if (parsed.error) detail += ` ${parsed.error}`; } catch {}
+      if (response.status === 402) {
+        throw new Error("Hugging Face requires paid credits for this Whisper request (HTTP 402). Configure WHISPER_WORKER_URL and WHISPER_WORKER_TOKEN in Vercel to use the project self-hosted Whisper worker, or enable sufficient Hugging Face credits.");
+      }
       throw new Error(detail);
     }
     let payload: { text?: string; error?: string };

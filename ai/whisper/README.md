@@ -1,6 +1,6 @@
 # Whisper transcription worker
 
-This service runs `faster-whisper` outside Vercel and exposes an authenticated HTTP transcription endpoint.
+This optional service runs `faster-whisper` outside Vercel and exposes an authenticated HTTP transcription endpoint.
 
 ## Deploy on Render
 
@@ -29,7 +29,7 @@ Set these Vercel Production environment variables:
 - `WHISPER_WORKER_TOKEN`: the same token configured on Render.
 - `WHISPER_MODEL`: `small` (must match the worker model selection).
 
-When `WHISPER_WORKER_URL` is configured, the app uses this worker before considering Hugging Face. The Hugging Face inference key is no longer needed for transcription.
+When `WHISPER_WORKER_URL` is configured, the app uses this worker. Otherwise, the existing Hugging Face or local Whisper fallback may be used by code paths that explicitly invoke transcription.
 
 ## Local development
 

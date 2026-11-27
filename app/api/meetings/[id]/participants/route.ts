@@ -3,7 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { recordAudit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-const ASSIGNABLE_ROLES = ["HOD", "Faculty / Officer", "Faculty", "Director", "Principal", "Super Admin", "Meeting Secretary", "Coordinators", "Coordinator"] as const;
+const ASSIGNABLE_ROLES = ["HOD", "Faculty / Officer", "Director", "Principal", "Super Admin", "Meeting Secretary", "Coordinators", "Coordinator"] as const;
 
 export async function GET(request: Request, { params }: { params: { id: string } }) {
   try {

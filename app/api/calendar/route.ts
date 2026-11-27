@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
     const [meetingResult, eventResult, taskResult, datedTimetableResult, weeklyTimetableResult] = await Promise.all([
       supabase.from("meetings").select("id,title,date,location,status,created_by").gte("date", from).lt("date", to).order("date"),
       (async () => {
-        const query = admin.from("events").select("id,title,start_time,end_time,location,status,organizer_id").gte("start_time", from).lt("start_time", to).order("start_time");
+        const query = admin.from("events").select("id,title,start_time,end_time,description,location,status,organizer_id").gte("start_time", from).lt("start_time", to).order("start_time");
         return LEADERS.includes(profile.role) ? query : query.eq("status", "Published");
       })(),
       admin.from("action_items").select("id,task,due_date,status,assignee_id,created_by,meeting_id").or(`assignee_id.eq.${profile.id},created_by.eq.${profile.id}`).gte("due_date", from.slice(0, 10)).lt("due_date", to.slice(0, 10)).order("due_date"),
@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
     });
     for (const row of eventResult.data ?? []) items.push({
       id: `event:${row.id}`, sourceId: row.id, kind: "event", title: row.title || "Institutional event",
-      start: row.start_time, end: row.end_time, location: row.location, status: row.status, href: `/events/${row.id}`,
+      start: row.start_time, end: row.end_time, location: row.location, description: row.description, status: row.status, href: `/events/${row.id}`, canEdit: LEADERS.includes(profile.role),
     });
     for (const row of taskResult.data ?? []) if (row.due_date) {
       const due = String(row.due_date).slice(0, 10);

@@ -7,8 +7,11 @@ import { participantAvailabilityFailure, localWindow } from "@/lib/calendar/sche
 const SEARCH_DAYS = 7;
 const SLOT_STEP_MINUTES = 30;
 const DEFAULT_DURATION_MINUTES = 60;
-const WORK_START_MINUTES = 9 * 60;
-const WORK_END_MINUTES = 17 * 60;
+// Generate a broad institutional-day search grid. Participant availability,
+// personal preferences and timetable conflicts are the actual constraints.
+// A fixed 09:00–17:00 candidate grid silently discarded valid saved windows.
+const WORK_START_MINUTES = 6 * 60;
+const WORK_END_MINUTES = 22 * 60;
 const TIME_ZONE_OFFSET = "+05:30";
 
 type UserRow = { id: string; email: string; role: string; department: string | null };
@@ -142,7 +145,7 @@ export async function POST(request: Request) {
     let candidateSlotsEvaluated = 0;
     const nowEpoch = Date.now();
     for (let dayIndex = 0; dayIndex < searchDays; dayIndex += 1) {
-      const dateString = addDays(startDate, dayIndex); const weekday = weekdayOneToSeven(dateString);
+      const dateString = addDays(startDate, dayIndex);
       for (let minutes = WORK_START_MINUTES; minutes + effectiveDuration <= WORK_END_MINUTES; minutes += SLOT_STEP_MINUTES) {
         const endMinutes = minutes + effectiveDuration; const start = candidateDateTime(dateString, minutes); const end = candidateDateTime(dateString, endMinutes); const startEpoch = start.getTime(); const endEpoch = end.getTime(); if (startEpoch <= nowEpoch) continue;
         candidateSlotsEvaluated += 1;

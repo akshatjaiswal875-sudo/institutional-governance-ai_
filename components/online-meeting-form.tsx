@@ -27,8 +27,8 @@ export function OnlineMeetingForm() {
   const [participantQuery, setParticipantQuery] = useState("");
   const [participantsLoading, setParticipantsLoading] = useState(true);
   const [participantsError, setParticipantsError] = useState("");
-  const [participantsAdded, setParticipantsAdded] = useState(0);
   const [creationNotice, setCreationNotice] = useState("");
+  const [invitationResults, setInvitationResults] = useState<Array<{ email: string; sent: boolean; error?: string }>>([]);
 
   useEffect(() => {
     let active = true;
@@ -84,8 +84,9 @@ export function OnlineMeetingForm() {
       });
       setCreated(data);
 
-      let added = 0;
+      const results: Array<{ email: string; sent: boolean; error?: string }> = [];
       for (const userId of selectedParticipantIds) {
+        const participantEmail = participantOptions.find(option => option.id === userId)?.email ?? userId;
         try {
           const response = await fetch(`/api/meetings/${data.id}/participants`, {
             method: "POST",
@@ -94,19 +95,35 @@ export function OnlineMeetingForm() {
           });
           const result = await response.json();
           if (!response.ok) throw new Error(result.error ?? "Unable to add participant.");
-          added += 1;
+
+          const invitationResponse = await fetch(`/api/meetings/${data.id}/participants/invite`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ participantId: result.data.id }),
+          });
+          const invitationResult = await invitationResponse.json();
+          if (!invitationResponse.ok || invitationResult.data?.sent !== true) {
+            throw new Error(invitationResult.error ?? "Participant was added, but the invitation email could not be sent.");
+          }
+          results.push({ email: participantEmail, sent: true });
         } catch (value) {
-          setParticipantsAdded(added);
-          setCreationNotice(
-            `Meeting was created and ${added} of ${selectedParticipantIds.length} selected participants were added. ${value instanceof Error ? value.message : "Please add the remaining participants from the meeting page."}`
-          );
-          return;
+          results.push({
+            email: participantEmail,
+            sent: false,
+            error: value instanceof Error ? value.message : "Unable to add participant or send invitation.",
+          });
         }
       }
-      setParticipantsAdded(added);
-      setCreationNotice(added
-        ? `${added} participant${added === 1 ? "" : "s"} added to this meeting. You can send their invitations from the meeting page.`
-        : "Meeting saved as a draft. You can add participants later from the meeting page.");
+      setInvitationResults(results);
+      const sent = results.filter(result => result.sent).length;
+      const failed = results.length - sent;
+      setCreationNotice(
+        selectedParticipantIds.length === 0
+          ? "Meeting saved as a draft. No participants were selected."
+          : failed === 0
+            ? `Meeting saved and all ${sent} participant invitation${sent === 1 ? "" : "s"} sent successfully.`
+            : `Meeting saved. ${sent} invitation${sent === 1 ? "" : "s"} sent; ${failed} failed. Open the meeting page to retry failed invitations.`
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to create meeting.");
     } finally {
@@ -120,7 +137,7 @@ export function OnlineMeetingForm() {
       <div className="mx-auto max-w-3xl space-y-6">
         <div>
           <h1 className="text-3xl font-semibold">Meeting created</h1>
-          <p className="mt-2 text-slate-600">Your meeting has been saved. Selected participants have been added to its participant list.</p>
+          <p className="mt-2 text-slate-600">Your meeting has been saved and participant invitations have been processed.</p>
         </div>
         <section className="rounded-2xl border border-[#b8c3a4] bg-white/80 p-6 shadow-sm">
           <div className="flex items-start gap-3">
@@ -130,7 +147,20 @@ export function OnlineMeetingForm() {
               <p className="mt-1 text-sm text-slate-600">{new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(created.date))}</p>
             </div>
           </div>
-          {creationNotice && <p className={creationNotice.startsWith("Meeting was created and") ? "mt-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800" : "mt-5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"} role="status">{creationNotice}</p>}
+          {creationNotice && <p className={invitationResults.some(result => !result.sent) ? "mt-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800" : "mt-5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"} role="status">{creationNotice}</p>}
+          {invitationResults.length > 0 && (
+            <div className="mt-4 rounded-xl border border-[#d6ddcf] bg-white p-4">
+              <h3 className="font-semibold text-[#26342e]">Invitation delivery</h3>
+              <ul className="mt-3 space-y-2 text-sm">
+                {invitationResults.map(result => (
+                  <li key={result.email} className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                    <span className="break-all text-slate-700">{result.email}</span>
+                    <span className={result.sent ? "text-emerald-700" : "text-red-700"}>{result.sent ? "Email sent" : `Failed: ${result.error ?? "Please retry from the meeting page."}`}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {online ? (
             <div className="mt-6 rounded-xl border border-[#b8c3a4] bg-[#f3f5ea] p-5">
               <div className="flex items-center gap-2 font-semibold text-[#18251f]"><Video size={18} /> Online meeting link</div>
@@ -150,7 +180,7 @@ export function OnlineMeetingForm() {
             </div>
           )}
           <div className="mt-6 flex flex-wrap gap-3">
-            <Link href={`/meetings/${created.id}`} className="btn btn-secondary">View meeting and send invitations</Link>
+            <Link href={`/meetings/${created.id}`} className="btn btn-secondary">{invitationResults.some(result => !result.sent) ? "View meeting and retry failed invitations" : "View meeting"}</Link>
             <Link href="/meetings/new" className="btn btn-primary">Create another</Link>
           </div>
         </section>
